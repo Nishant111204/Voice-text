@@ -1,0 +1,64 @@
+version: '3.8'
+
+services:
+  mongodb:
+    image: mongo:6
+    container_name: lecture-mongo
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo_data:/data/db
+    networks:
+      - lecture-network
+
+  backend:
+    build: ./server
+    container_name: lecture-backend
+    ports:
+      - "5000:5000"
+    environment:
+      - PORT=5000
+      - NODE_ENV=production
+      - MONGO_URI=mongodb://mongodb:27017/ai-lecture-platform
+      - JWT_SECRET=your_production_jwt_secret_change_this
+      - AI_SERVICE_URL=http://ai-engine:8000
+    depends_on:
+      - mongodb
+      - ai-engine
+    volumes:
+      - ./server/uploads:/app/uploads
+    networks:
+      - lecture-network
+
+  ai-engine:
+    build: ./ai_engine
+    container_name: lecture-ai-engine
+    ports:
+      - "8000:8000"
+    environment:
+      - MONGO_URI=mongodb://mongodb:27017/ai-lecture-platform
+    depends_on:
+      - mongodb
+    volumes:
+      - ./server/uploads:/app/uploads
+    networks:
+      - lecture-network
+
+  frontend:
+    build: ./client
+    container_name: lecture-frontend
+    ports:
+      - "3000:3000"
+    environment:
+      - NEXT_PUBLIC_API_URL=http://localhost:5000/api
+    depends_on:
+      - backend
+    networks:
+      - lecture-network
+
+volumes:
+  mongo_data:
+
+networks:
+  lecture-network:
+    driver: bridge
