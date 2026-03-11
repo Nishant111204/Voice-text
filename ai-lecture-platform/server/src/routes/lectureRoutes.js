@@ -68,4 +68,7 @@ router.route('/:id/notes').get(protect, getNotes);
 router.route('/:id/quiz').get(protect, getQuiz);
 router.route('/:id/materials').post(protect, upload.single('file'), addStudyMaterial);
 
+// AI Assistant route
+router.post('/ask-ai', protect, require('../controllers/aiController').askAI);
+
 module.exports = router;

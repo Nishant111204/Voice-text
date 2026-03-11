@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import api from '@/services/api';
-import { ArrowLeft, FileText, BookOpen, HelpCircle } from 'lucide-react';
+import { ArrowLeft, FileText, BookOpen, HelpCircle, MessageCircle, Send, Bot } from 'lucide-react';
 
 export default function LecturePage() {
     const params = useParams();
@@ -12,6 +12,46 @@ export default function LecturePage() {
     const [content, setContent] = useState<any>(null);
     const [quiz, setQuiz] = useState<any>(null);
     const [activeTab, setActiveTab] = useState('transcript');
+    const [aiQuestion, setAiQuestion] = useState('');
+    const [aiAnswer, setAiAnswer] = useState('');
+    const [isAskingAI, setIsAskingAI] = useState(false);
+
+    const handleAskAI = async () => {
+        if (!aiQuestion.trim() || !content?.transcript) return;
+        
+        setIsAskingAI(true);
+        try {
+            // Pre-process transcript to reduce payload size
+            let processedTranscript = content.transcript;
+            if (Array.isArray(content.transcript)) {
+                // Convert to readable string and limit size
+                const transcriptText = content.transcript.map((segment: any) => 
+                    `[${segment.start}s-${segment.end}s]: ${segment.text}`
+                ).join('\n');
+                
+                // Limit to first 5000 characters to avoid payload issues
+                processedTranscript = transcriptText.length > 5000 
+                    ? transcriptText.substring(0, 5000) + '\n\n[Note: Transcript truncated for size limits]'
+                    : transcriptText;
+            }
+            
+            const response = await api.post('/lectures/ask-ai', {
+                lectureId: params.id,
+                question: aiQuestion,
+                transcript: processedTranscript
+            });
+            setAiAnswer(response.data.answer);
+        } catch (error: any) {
+            console.error('Error asking AI:', error);
+            if (error.response?.status === 413) {
+                setAiAnswer('The lecture transcript is too long for AI processing. Please try a more specific question or contact support.');
+            } else {
+                setAiAnswer('Sorry, I encountered an error while processing your question. Please try again.');
+            }
+        } finally {
+            setIsAskingAI(false);
+        }
+    };
 
     useEffect(() => {
         const fetchData = async () => {
@@ -75,6 +115,13 @@ export default function LecturePage() {
                             <HelpCircle className="inline mr-2" size={20} />
                             Quiz
                         </button>
+                        <button
+                            onClick={() => setActiveTab('ask-ai')}
+                            className={`py-4 border-b-2 ${activeTab === 'ask-ai' ? 'border-blue-600 text-blue-600' : 'border-transparent text-gray-600'}`}
+                        >
+                            <Bot className="inline mr-2" size={20} />
+                            Ask AI
+                        </button>
                     </div>
                 </div>
             </div>
@@ -135,6 +182,63 @@ export default function LecturePage() {
                                     {q.explanation && <p className="text-sm text-gray-600 mt-2 ml-4">💡 {q.explanation}</p>}
                                 </div>
                             ))}
+                        </div>
+                    </div>
+                )}
+
+                {activeTab === 'ask-ai' && (
+                    <div className="bg-white rounded-lg shadow p-6">
+                        <div className="flex items-center gap-2 mb-6">
+                            <Bot className="w-6 h-6 text-blue-600" />
+                            <h2 className="text-2xl font-bold">Ask AI About This Lecture</h2>
+                        </div>
+                        
+                        <div className="space-y-4">
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 mb-2">
+                                    Your Question
+                                </label>
+                                <textarea
+                                    value={aiQuestion}
+                                    onChange={(e) => setAiQuestion(e.target.value)}
+                                    placeholder="Ask anything about this lecture... For example: 'What are the main topics covered?' or 'Can you explain the concept discussed at 15:30?'"
+                                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 resize-none"
+                                    rows={4}
+                                    disabled={isAskingAI}
+                                />
+                            </div>
+                            
+                            <button
+                                onClick={handleAskAI}
+                                disabled={!aiQuestion.trim() || isAskingAI || !content?.transcript}
+                                className="flex items-center gap-2 px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors duration-200"
+                            >
+                                {isAskingAI ? (
+                                    <>
+                                        <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                                        Processing...
+                                    </>
+                                ) : (
+                                    <>
+                                        <Send className="w-4 h-4" />
+                                        Ask AI
+                                    </>
+                                )}
+                            </button>
+                            
+                            {aiAnswer && (
+                                <div className="mt-6 p-4 bg-blue-50 border border-blue-200 rounded-lg">
+                                    <div className="flex items-start gap-3">
+                                        <Bot className="w-5 h-5 text-blue-600 mt-1 flex-shrink-0" />
+                                        <div className="flex-1">
+                                            <h3 className="font-semibold text-blue-900 mb-2">AI Response</h3>
+                                            <div className="text-gray-700 whitespace-pre-wrap">
+                                                {aiAnswer}
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
                         </div>
                     </div>
                 )}

@@ -6,10 +6,15 @@ import os
 import json
 import asyncio
 from app.services.orchestrator import process_lecture
+from app.services.ai_assistant import ask_ai_about_lecture
 
 load_dotenv()
 
-app = FastAPI(title="AI Lecture Engine")
+# Configure larger payload size for AI requests
+app = FastAPI(
+    title="AI Lecture Engine",
+    max_request_size=50 * 1024 * 1024  # 50MB max request size
+)
 
 class ProcessRequest(BaseModel):
     lectureId: str
@@ -30,6 +35,11 @@ async def trigger_processing(request: ProcessRequest, background_tasks: Backgrou
 
 class RegenerateRequest(BaseModel):
     lectureId: str
+
+class AskAIRequest(BaseModel):
+    lectureId: str
+    question: str
+    transcript: str
 
 @app.post("/regenerate-quiz")
 async def regenerate_quiz(request: RegenerateRequest, background_tasks: BackgroundTasks):
@@ -59,6 +69,18 @@ async def regenerate_quiz(request: RegenerateRequest, background_tasks: Backgrou
     
     background_tasks.add_task(do_regen)
     return {"status": "quiz_regeneration_started", "lectureId": request.lectureId}
+
+@app.post("/ask-ai")
+async def ask_ai(request: AskAIRequest):
+    """Ask AI questions about lecture content."""
+    try:
+        answer = ask_ai_about_lecture(request.question, request.transcript)
+        return {"answer": answer}
+    except Exception as e:
+        print(f"Error in ask_ai endpoint: {e}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail="Failed to process AI request")
 
 @app.websocket("/ws/transcribe/{lecture_id}")
 async def websocket_transcribe(websocket: WebSocket, lecture_id: str):
