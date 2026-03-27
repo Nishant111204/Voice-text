@@ -11,6 +11,7 @@ if (!fs.existsSync(UPLOADS_DIR)) {
 }
 const {
     uploadLecture,
+    uploadLectureFromUrl,
     getLectures,
     getLectureById,
     deleteLecture,
@@ -56,6 +57,7 @@ const upload = multer({
 });
 
 router.route('/upload').post(protect, upload.single('file'), uploadLecture);
+router.route('/upload-url').post(protect, uploadLectureFromUrl);
 router.route('/').get(protect, getLectures);
 router
     .route('/:id')

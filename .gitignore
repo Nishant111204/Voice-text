@@ -200,6 +200,9 @@ $RECYCLE.BIN/
 *.webm
 *.mkv
 
+# Exception for models directory
+!src/models/
+
 # Transcript and processed content files
 transcripts/
 processed_audio/

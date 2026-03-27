@@ -5,8 +5,9 @@ from app.services.nlp import generate_smart_notes, generate_quiz
 from bson import ObjectId
 import datetime
 
-def process_lecture(lecture_id: str, file_path: str):
+def process_lecture(lecture_id: str, file_path_or_url: str):
     print(f"Starting processing for {lecture_id}")
+    print(f"Input: {file_path_or_url}")
     
     # 1. Update Status to Processing
     lectures_collection.update_one(
@@ -20,9 +21,9 @@ def process_lecture(lecture_id: str, file_path: str):
         lecture_title = lecture_doc.get("title", "Untitled Lecture") if lecture_doc else "Untitled Lecture"
         print(f"Lecture title: {lecture_title}")
 
-        # 2. Transcription (Whisper)
+        # 2. Transcription (Whisper) - handles both URLs and local files
         print("Running Transcription...")
-        transcript_result = transcribe_audio(file_path)
+        transcript_result = transcribe_audio(file_path_or_url)
         full_text = transcript_result["text"]
         segments = transcript_result["segments"]
         

@@ -8,11 +8,24 @@ const triggerAIProcessing = async (lectureId, filePath) => {
         // Don't await this if we want it to be async (fire and forget from client perspective)
         // But here we might want to log the start
         console.log(`Triggering AI processing for lecture ${lectureId}`);
+        console.log(`File path: ${filePath}`);
 
-        await axios.post(`${aiServiceUrl}/process`, {
-            lectureId: lectureId,
-            filePath: path.resolve(filePath), // Ensure absolute path
-        });
+        // Check if it's a URL or local file
+        const isUrl = filePath.startsWith('http');
+        
+        if (isUrl) {
+            // For YouTube URLs, pass the URL directly to transcription service
+            await axios.post(`${aiServiceUrl}/process-url`, {
+                lectureId: lectureId,
+                videoUrl: filePath, // Pass URL instead of file path
+            });
+        } else {
+            // For local files, pass the file path
+            await axios.post(`${aiServiceUrl}/process`, {
+                lectureId: lectureId,
+                filePath: path.resolve(filePath), // Ensure absolute path
+            });
+        }
 
     } catch (error) {
         console.error(`Error triggering AI service: ${error.message}`);

@@ -20,9 +20,21 @@ class ProcessRequest(BaseModel):
     lectureId: str
     filePath: str
 
+class ProcessUrlRequest(BaseModel):
+    lectureId: str
+    videoUrl: str
+
 @app.get("/")
 def read_root():
     return {"status": "AI Engine Running", "components": ["Whisper", "Transformers"]}
+
+@app.post("/process-url")
+async def trigger_processing_url(request: ProcessUrlRequest, background_tasks: BackgroundTasks):
+    """Process lecture from YouTube URL."""
+    print(f"Processing lecture from URL: {request.videoUrl}")
+    
+    background_tasks.add_task(process_lecture, request.lectureId, request.videoUrl)
+    return {"status": "processing_started", "lectureId": request.lectureId, "url": request.videoUrl}
 
 @app.post("/process")
 async def trigger_processing(request: ProcessRequest, background_tasks: BackgroundTasks):

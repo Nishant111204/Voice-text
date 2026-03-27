@@ -33,6 +33,57 @@ const uploadLecture = asyncHandler(async (req, res) => {
     res.status(201).json(lecture);
 });
 
+// @desc    Upload a lecture from URL (video/audio link)
+// @route   POST /api/lectures/upload-url
+// @access  Private
+const uploadLectureFromUrl = asyncHandler(async (req, res) => {
+    const { videoUrl, title, isPrivate } = req.body;
+
+    if (!videoUrl) {
+        res.status(400);
+        throw new Error('Video URL is required');
+    }
+
+    // More flexible URL validation - accept YouTube and other video platforms
+    const urlPattern = /^https?:\/\/.+/i;
+    if (!urlPattern.test(videoUrl)) {
+        res.status(400);
+        throw new Error('Invalid URL format. Please provide a valid video or audio URL.');
+    }
+
+    // Check if it's a supported format for direct download
+    const supportedFormats = /\.(mp4|mov|avi|mkv|webm|mp3|wav|m4a|ogg)(\?.*)?$/i;
+    const isDirectFile = supportedFormats.test(videoUrl);
+    
+    // For YouTube and other platforms, we'll attempt processing (may require additional setup)
+    if (!isDirectFile) {
+        console.log('Warning: URL may not be direct file link. Processing will be attempted.');
+    }
+
+    const lecture = await Lecture.create({
+        userId: req.user._id,
+        organizationId: req.user.organizationId,
+        title: title || extractTitleFromUrl(videoUrl),
+        videoUrl: videoUrl,
+        originalFileName: extractTitleFromUrl(videoUrl),
+        status: 'uploading',
+        isPrivate: isPrivate === 'true' || isPrivate === true,
+    });
+
+    console.log('Lecture created from URL in DB:', lecture._id);
+
+    // Trigger AI processing asynchronously
+    triggerAIProcessing(lecture._id, lecture.videoUrl);
+
+    res.status(201).json(lecture);
+});
+
+// Helper function to extract title from URL
+const extractTitleFromUrl = (url) => {
+    const filename = url.split('/').pop().split('?')[0];
+    return filename.replace(/\.[^/.]+$/, '') || 'Untitled Lecture';
+};
+
 // @desc    Get all lectures for a user
 // @route   GET /api/lectures
 // @access  Private
@@ -129,6 +180,7 @@ const addStudyMaterial = asyncHandler(async (req, res) => {
 
 module.exports = {
     uploadLecture,
+    uploadLectureFromUrl,
     getLectures,
     getLectureById,
     deleteLecture,

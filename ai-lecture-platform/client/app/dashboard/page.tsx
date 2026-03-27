@@ -20,6 +20,9 @@ export default function DashboardPage() {
     const [isRecording, setIsRecording] = useState(false);
     const [recordingText, setRecordingText] = useState('');
     const [interimText, setInterimText] = useState('');
+    const [showUrlUpload, setShowUrlUpload] = useState(false);
+    const [urlInput, setUrlInput] = useState('');
+    const [urlTitle, setUrlTitle] = useState('');
     const [selectedLecture, setSelectedLecture] = useState<string | null>(null);
     const [materialFile, setMaterialFile] = useState<File | null>(null);
     const [isPrivate, setIsPrivate] = useState(true);
@@ -93,6 +96,33 @@ export default function DashboardPage() {
         } catch (error: any) {
             console.error('Upload error:', error);
             setStatus(error.response?.data?.message || 'Upload failed');
+        } finally {
+            setUploading(false);
+        }
+    };
+
+    const handleUrlUpload = async () => {
+        if (!urlInput.trim()) {
+            setStatus('Please enter a valid URL');
+            return;
+        }
+
+        setUploading(true);
+        setStatus('Processing URL...');
+        try {
+            await api.post('/lectures/upload-url', {
+                videoUrl: urlInput.trim(),
+                title: urlTitle.trim() || 'Untitled Lecture',
+                isPrivate: isPrivate
+            });
+            setStatus('URL upload successful! AI processing started.');
+            setUrlInput('');
+            setUrlTitle('');
+            setShowUrlUpload(false);
+            fetchLectures();
+        } catch (error: any) {
+            console.error('URL upload error:', error);
+            setStatus(error.response?.data?.message || 'URL upload failed');
         } finally {
             setUploading(false);
         }
@@ -305,6 +335,47 @@ export default function DashboardPage() {
                                     <p className="text-lg font-bold">Choose a file</p>
                                     <p className="text-xs text-gray-500 mt-1 uppercase font-black tracking-wider">MP4, MOV, WAV, MP3</p>
                                 </div>
+                            </div>
+
+                            {/* URL Upload Option */}
+                            <div className="mb-8">
+                                <button
+                                    onClick={() => setShowUrlUpload(!showUrlUpload)}
+                                    className="w-full py-3 bg-white/10 text-white rounded-xl font-black text-sm uppercase tracking-widest hover:bg-white/20 transition-all mb-4"
+                                >
+                                    {showUrlUpload ? 'Hide URL Upload' : 'Upload from URL'}
+                                </button>
+
+                                {showUrlUpload && (
+                                    <div className="bg-white/5 rounded-xl p-6 border border-white/10">
+                                        <input
+                                            type="text"
+                                            placeholder="Enter video/audio URL (YouTube, direct links supported)"
+                                            value={urlInput}
+                                            onChange={(e) => setUrlInput(e.target.value)}
+                                            disabled={uploading}
+                                            className="w-full px-4 py-3 bg-white/10 text-white rounded-lg mb-4 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                        />
+                                        <input
+                                            type="text"
+                                            placeholder="Lecture title (optional)"
+                                            value={urlTitle}
+                                            onChange={(e) => setUrlTitle(e.target.value)}
+                                            disabled={uploading}
+                                            className="w-full px-4 py-3 bg-white/10 text-white rounded-lg mb-4 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                        />
+                                        <button
+                                            onClick={handleUrlUpload}
+                                            disabled={uploading || !urlInput.trim()}
+                                            className="w-full py-3 bg-blue-600 text-white rounded-lg font-black text-sm uppercase tracking-widest hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
+                                        >
+                                            {uploading ? 'Processing...' : 'Upload from URL'}
+                                        </button>
+                                        <p className="text-xs text-gray-400 mt-3">
+                                            Supported formats: MP4, MOV, AVI, MKV, WEBM, MP3, WAV, M4A, OGG
+                                        </p>
+                                    </div>
+                                )}
                             </div>
                         </div>
 
