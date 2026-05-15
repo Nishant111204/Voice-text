@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { useAuth } from '@/context/AuthContext';
 import api from '@/services/api';
 import Link from 'next/link';
@@ -9,7 +9,8 @@ import { io } from 'socket.io-client';
 import {
     BookOpen, LogOut, Presentation, Lock, Globe, Upload,
     Mic, Building2, ChevronRight, FileText, HelpCircle,
-    Clock, Search, TrendingUp, Link2, CheckCircle, User
+    Clock, Search, TrendingUp, Link2, CheckCircle, User,
+    BarChart2, Zap, Bell
 } from 'lucide-react';
 
 export default function StudentDashboard() {
@@ -40,24 +41,52 @@ export default function StudentDashboard() {
     const [searchQuery, setSearchQuery] = useState('');
     const [statusFilter, setStatusFilter] = useState<'all' | 'completed' | 'processing'>('all');
 
+    const [justCompleted, setJustCompleted] = useState<string | null>(null); // title of lecture that just finished
+
     const mediaRecorderRef = useRef<MediaRecorder | null>(null);
     const socketRef = useRef<any>(null);
     const recognitionRef = useRef<any>(null);
+    const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null);
+    const prevStatusRef = useRef<Record<string, string>>({});
 
     useEffect(() => {
         if (!loading && !user) { router.replace('/login'); return; }
         if (!loading && user && user.role !== 'student') { router.replace('/dashboard'); }
     }, [user, loading, router]);
 
-    const fetchLectures = async () => {
+    const fetchLectures = useCallback(async () => {
         try {
             const { data } = await api.get('/lectures');
-            // Personal = owned by me
-            setMyLectures(data.filter((l: any) => l.userId === user?._id));
-            // Org = shared (isPrivate: false) from org, not owned by me
-            setOrgLectures(data.filter((l: any) => l.userId !== user?._id && l.isPrivate === false));
+            const mine = data.filter((l: any) => l.userId === user?._id);
+            const org = data.filter((l: any) => l.userId !== user?._id && l.isPrivate === false);
+
+            // Detect any lecture that just completed
+            mine.forEach((l: any) => {
+                const prev = prevStatusRef.current[l._id];
+                if (prev && prev !== 'completed' && l.status === 'completed') {
+                    setJustCompleted(l.title);
+                    setTimeout(() => setJustCompleted(null), 6000);
+                }
+                prevStatusRef.current[l._id] = l.status;
+            });
+
+            setMyLectures(mine);
+            setOrgLectures(org);
+
+            // Auto-poll while any lecture is still processing
+            const anyProcessing = mine.some((l: any) => ['processing', 'uploading'].includes(l.status));
+            if (anyProcessing && !pollingRef.current) {
+                pollingRef.current = setInterval(() => fetchLectures(), 8000);
+            } else if (!anyProcessing && pollingRef.current) {
+                clearInterval(pollingRef.current);
+                pollingRef.current = null;
+            }
         } catch { /* silent */ }
-    };
+    }, [user]);
+
+    useEffect(() => {
+        return () => { if (pollingRef.current) clearInterval(pollingRef.current); };
+    }, []);
 
     useEffect(() => {
         if (!user) return;
@@ -201,6 +230,10 @@ export default function StudentDashboard() {
     );
 
     const hasOrg = !!user.organizationId;
+    const allLectures = [...myLectures, ...orgLectures];
+    const completedCount = allLectures.filter(l => l.status === 'completed').length;
+    const processingCount = myLectures.filter(l => ['processing', 'uploading'].includes(l.status)).length;
+    const quizzesAvailable = allLectures.filter(l => l.status === 'completed').length;
 
     return (
         <div className="min-h-screen bg-[#FDFDFF] font-sans pb-20">
@@ -246,6 +279,46 @@ export default function StudentDashboard() {
                         {hasOrg ? `Member of ${user.organizationName}` : 'Personal account — join an org to access shared lectures'}
                     </p>
                 </div>
+
+                {/* "Just completed" notification */}
+                {justCompleted && (
+                    <div className="mb-6 p-4 bg-green-600 text-white rounded-2xl flex items-center gap-3 shadow-xl shadow-green-100 animate-in slide-in-from-top-4">
+                        <div className="w-8 h-8 bg-white/20 rounded-xl flex items-center justify-center flex-shrink-0">
+                            <Bell size={16} />
+                        </div>
+                        <div className="flex-1">
+                            <p className="font-black text-sm uppercase tracking-widest">AI Processing Complete!</p>
+                            <p className="text-white/80 font-medium text-xs mt-0.5">"{justCompleted}" — transcript, notes, and quiz are ready.</p>
+                        </div>
+                        <button onClick={() => setJustCompleted(null)} className="text-white/60 hover:text-white text-lg leading-none">✕</button>
+                    </div>
+                )}
+
+                {/* Stats row */}
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-10">
+                    {[
+                        { label: 'Total Lectures', value: allLectures.length, icon: <Presentation size={16} />, color: 'bg-blue-50 text-blue-600' },
+                        { label: 'Completed', value: completedCount, icon: <CheckCircle size={16} />, color: 'bg-green-50 text-green-600' },
+                        { label: 'Processing', value: processingCount, icon: <Clock size={16} />, color: 'bg-orange-50 text-orange-600', pulse: processingCount > 0 },
+                        { label: 'Quizzes Ready', value: quizzesAvailable, icon: <HelpCircle size={16} />, color: 'bg-purple-50 text-purple-600' },
+                    ].map(({ label, value, icon, color, pulse }) => (
+                        <div key={label} className="bg-white border border-gray-100 rounded-[28px] p-5 flex flex-col gap-3">
+                            <div className={`w-9 h-9 rounded-xl flex items-center justify-center ${color} ${pulse ? 'animate-pulse' : ''}`}>{icon}</div>
+                            <p className="text-3xl font-black text-gray-900">{value}</p>
+                            <p className="text-[10px] font-black uppercase tracking-widest text-gray-400">{label}</p>
+                        </div>
+                    ))}
+                </div>
+
+                {/* Processing in-progress banner */}
+                {processingCount > 0 && (
+                    <div className="mb-8 p-4 bg-orange-50 border border-orange-100 rounded-2xl flex items-center gap-3">
+                        <div className="w-6 h-6 border-[3px] border-orange-200 border-t-orange-500 rounded-full animate-spin flex-shrink-0"></div>
+                        <p className="text-sm font-bold text-orange-700">
+                            {processingCount} lecture{processingCount > 1 ? 's are' : ' is'} being processed by AI. This page auto-refreshes.
+                        </p>
+                    </div>
+                )}
 
                 {/* Section Tabs */}
                 <div className="flex items-center gap-1 bg-gray-100 p-1 rounded-2xl w-fit mb-10">

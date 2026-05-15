@@ -1,8 +1,6 @@
 "use client"
 
 import { useState } from 'react';
-import { useRouter } from 'next/navigation';
-import { useAuth } from '@/context/AuthContext';
 import api from '@/services/api';
 import { Building2, Presentation, ArrowLeft, CheckCircle } from 'lucide-react';
 
@@ -14,9 +12,6 @@ const ORG_TYPES = [
 ];
 
 export default function SetupOrgPage() {
-    const router = useRouter();
-    const { login } = useAuth();
-
     const [orgName, setOrgName] = useState('');
     const [orgType, setOrgType] = useState('college');
     const [loading, setLoading] = useState(false);
@@ -33,8 +28,10 @@ export default function SetupOrgPage() {
                 organizationName: orgName.trim(),
                 organizationType: orgType,
             });
-            // Login with updated token that has role=admin + orgId
-            login(data.token, data);
+            // Persist updated token, then full-page navigate so AuthContext
+            // re-initialises cleanly with the new role=admin + orgId.
+            localStorage.setItem('token', data.token);
+            window.location.href = '/org/dashboard';
         } catch (e: any) {
             setError(e?.response?.data?.message || 'Failed to create organization. Please try again.');
             setLoading(false);
@@ -46,7 +43,7 @@ export default function SetupOrgPage() {
             <div className="w-full max-w-lg">
                 {/* Back */}
                 <button
-                    onClick={() => router.push('/auth/select-role')}
+                    onClick={() => { window.location.href = '/auth/select-role'; }}
                     className="flex items-center gap-2 text-xs font-black uppercase tracking-widest text-gray-400 hover:text-blue-600 transition-colors mb-10"
                 >
                     <ArrowLeft size={15} /> Back

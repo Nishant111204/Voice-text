@@ -1,14 +1,10 @@
 "use client"
 
 import { useState } from 'react';
-import { useRouter } from 'next/navigation';
-import { useAuth } from '@/context/AuthContext';
 import api from '@/services/api';
 import { BookOpen, School, Building2, Presentation, ChevronRight } from 'lucide-react';
 
 export default function SelectRolePage() {
-    const router = useRouter();
-    const { login } = useAuth();
     const [loading, setLoading] = useState<string | null>(null); // tracks which card is loading
     const [error, setError] = useState('');
 
@@ -17,7 +13,11 @@ export default function SelectRolePage() {
         setError('');
         try {
             const { data } = await api.post('/auth/set-role', { role });
-            login(data.token, data);
+            // Store updated token, then do a full-page navigation so AuthContext
+            // re-initialises cleanly (avoids router.push stale-state issues).
+            localStorage.setItem('token', data.token);
+            const dest = role === 'teacher' ? '/teacher/dashboard' : '/student/dashboard';
+            window.location.href = dest;
         } catch (e: any) {
             setError(e?.response?.data?.message || 'Failed to set role. Please try again.');
             setLoading(null);
@@ -25,8 +25,7 @@ export default function SelectRolePage() {
     };
 
     const handleCreateOrg = () => {
-        // Token already in localStorage from callback page
-        router.push('/auth/setup-org');
+        window.location.href = '/auth/setup-org';
     };
 
     const cards = [

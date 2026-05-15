@@ -58,6 +58,9 @@ export default function OrgDashboard() {
     const students = members.filter(m => m.role === 'student');
     const sharedLectures = lectures.filter(l => !l.isPrivate);
     const completed = lectures.filter(l => l.status === 'completed').length;
+    const completionRate = sharedLectures.length > 0
+        ? Math.round((completed / sharedLectures.length) * 100)
+        : 0;
 
     return (
         <div className="min-h-screen bg-[#FDFDFF] font-sans pb-20">
@@ -77,6 +80,9 @@ export default function OrgDashboard() {
                             <div className="w-[1px] h-3 bg-purple-200"></div>
                             <span className="text-xs font-bold text-gray-700">{user.name}</span>
                         </div>
+                        <Link href="/profile" className="p-2 text-gray-400 hover:text-blue-600 transition-colors" title="Profile">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="8" r="4"/><path d="M4 20c0-4 3.6-7 8-7s8 3 8 7"/></svg>
+                        </Link>
                         <button onClick={logout} className="p-2 text-gray-400 hover:text-red-500 transition-colors">
                             <LogOut size={20} />
                         </button>
@@ -111,20 +117,45 @@ export default function OrgDashboard() {
                 </div>
 
                 {/* Stats */}
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-10">
+                <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4 mb-10">
                     {[
                         { label: 'Total Members', value: members.length, color: 'bg-blue-50 text-blue-600', icon: <Users size={16} /> },
                         { label: 'Teachers', value: teachers.length, color: 'bg-orange-50 text-orange-600', icon: <School size={16} /> },
                         { label: 'Students', value: students.length, color: 'bg-green-50 text-green-600', icon: <BookOpen size={16} /> },
                         { label: 'Shared Lectures', value: sharedLectures.length, color: 'bg-purple-50 text-purple-600', icon: <Globe size={16} /> },
+                        { label: 'AI Processed', value: completed, color: 'bg-teal-50 text-teal-600', icon: <TrendingUp size={16} /> },
+                        { label: 'Completion Rate', value: `${completionRate}%`, color: 'bg-indigo-50 text-indigo-600', icon: <CheckCircle size={16} /> },
                     ].map(({ label, value, color, icon }) => (
-                        <div key={label} className="bg-white border border-gray-100 rounded-[28px] p-6 flex flex-col gap-3">
+                        <div key={label} className="bg-white border border-gray-100 rounded-[28px] p-5 flex flex-col gap-3">
                             <div className={`w-9 h-9 rounded-xl flex items-center justify-center ${color}`}>{icon}</div>
-                            <p className="text-3xl font-black text-gray-900">{value}</p>
+                            <p className="text-2xl font-black text-gray-900">{value}</p>
                             <p className="text-[10px] font-black uppercase tracking-widest text-gray-400">{label}</p>
                         </div>
                     ))}
                 </div>
+
+                {/* Prominent invite code banner */}
+                {orgDetails?.organizationCode && members.length < 3 && (
+                    <div className="mb-10 p-8 bg-gradient-to-r from-blue-600 to-indigo-600 rounded-[32px] text-white">
+                        <div className="flex flex-col md:flex-row items-start md:items-center gap-6">
+                            <div className="flex-1">
+                                <p className="text-[10px] font-black uppercase tracking-[0.3em] text-white/60 mb-1">Get Started</p>
+                                <h3 className="text-2xl font-black uppercase tracking-tight mb-2">Invite Your Members</h3>
+                                <p className="text-white/80 font-medium text-sm">Share this code + your organization name so teachers and students can join.</p>
+                            </div>
+                            <div className="flex flex-col items-center gap-3">
+                                <div className="bg-white rounded-2xl px-8 py-4 text-center">
+                                    <p className="text-[9px] font-black uppercase tracking-widest text-gray-400 mb-1">Invite Code</p>
+                                    <p className="text-2xl font-black text-gray-900 tracking-[0.2em]">{orgDetails.organizationCode}</p>
+                                </div>
+                                <button onClick={copyCode} className="flex items-center gap-2 px-5 py-2 bg-white/20 hover:bg-white/30 rounded-xl text-xs font-black uppercase tracking-widest transition-all">
+                                    {copied ? <CheckCircle size={13} /> : <Copy size={13} />}
+                                    {copied ? 'Copied!' : 'Copy Code'}
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                )}
 
                 {/* Quick Actions */}
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5 mb-12">

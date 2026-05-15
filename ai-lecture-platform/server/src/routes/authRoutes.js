@@ -99,28 +99,43 @@ router.post('/setup-organization', protect, async (req, res) => {
 });
 
 // ── Google OAuth ───────────────────────────────────────────────────────────
+// Why session: false?
+// Passport's default state-check stores a random nonce in the Express session
+// and expects the session cookie to round-trip through Google's redirect.
+// In local development (frontend :3000 → backend :5000 → Google → :5000),
+// browsers block the session cookie as cross-origin, so the nonce is never
+// found and Passport throws "Bad Request".
+// session:false skips state verification AND session persistence entirely;
+// req.user is still populated for the duration of the callback handler.
+
 // Step 1: redirect to Google
 router.get(
     '/google',
-    passport.authenticate('google', { scope: ['profile', 'email'], session: true })
+    passport.authenticate('google', { scope: ['profile', 'email'], session: false })
 );
 
 // Step 2: Google redirects back here
 router.get(
     '/google/callback',
-    passport.authenticate('google', { failureRedirect: `${FRONTEND_URL}/login?error=google_failed`, session: true }),
+    passport.authenticate('google', {
+        failureRedirect: `${FRONTEND_URL}/login?error=google_failed`,
+        session: false,
+    }),
     (req, res) => {
-        const { user, isNew } = req.user;          // set by Passport strategy
+        if (!req.user) {
+            return res.redirect(`${FRONTEND_URL}/login?error=google_failed`);
+        }
+
+        const { user, isNew } = req.user;
         const token = generateToken(user._id);
 
-        // Redirect to frontend callback page with token + metadata
         const params = new URLSearchParams({
             token,
-            name: user.name,
+            name:  user.name,
             email: user.email,
-            role: user.role,
-            id: user._id.toString(),
-            new: isNew ? '1' : '0',
+            role:  user.role,
+            id:    user._id.toString(),
+            new:   isNew ? '1' : '0',
             ...(user.organizationId ? { orgId: user.organizationId.toString() } : {}),
         });
 

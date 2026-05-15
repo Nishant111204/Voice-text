@@ -1,80 +1,45 @@
-import os
-from fastapi import HTTPException
-from .nlp import _ask_groq, MODEL
-from typing import Dict, Any
-import json
+from .nlp import _call_groq, MODEL, _smart_chunk
 
 def ask_ai_about_lecture(question: str, transcript: str) -> str:
-    """
-    Ask AI questions about lecture content using Groq API
-    """
+    """Ask AI a question about a lecture, using the transcript as context."""
     try:
-        print(f"AI Assistant called with question: {question[:50]}...")
-        print(f"Transcript type: {type(transcript)}, length: {len(str(transcript))}")
-        
-        # Convert transcript array to readable string if needed
+        print(f"AI Assistant: question='{question[:60]}...'")
+
+        # Normalise transcript — accept both plain string and segment array
         if isinstance(transcript, list):
-            # Convert array of transcript segments to readable text
-            transcript_text = "\n".join([
-                f"[{segment.get('start', 0)}s - {segment.get('end', 0)}s]: {segment.get('text', '')}"
-                for segment in transcript
-            ])
+            transcript_text = "\n".join(
+                f"[{seg.get('start', 0):.0f}s]: {seg.get('text', '')}"
+                for seg in transcript
+            )
         else:
-            transcript_text = transcript
-        
-        # Smart transcript processing to avoid payload limits
-        max_transcript_length = 8000  # Reduced to 8K characters for safety
-        
-        # For very long transcripts, use only the most relevant parts
-        if len(transcript_text) > max_transcript_length:
-            # Take beginning, middle, and end of transcript
-            beginning = transcript_text[:2000]
-            middle_start = len(transcript_text) // 2 - 2000
-            middle = transcript_text[middle_start:middle_start + 2000]
-            end = transcript_text[-2000:]
-            
-            truncated_transcript = f"""
-            {beginning}
+            transcript_text = str(transcript)
 
-            ... [MIDDLE CONTENT - ~{middle_start} characters omitted] ...
+        # Smart chunk to stay within model limits
+        context = _smart_chunk(transcript_text, 10000)
 
-            {end}
+        prompt = f"""You are an expert AI teaching assistant. A student is asking a question about a lecture.
 
-            Note: Due to length limits, only showing key sections. For more specific questions about particular parts, please ask with timestamps or specific topics.
-            """
-        else:
-            truncated_transcript = transcript_text
-        
-        # Enhanced prompt for better AI responses
-        prompt = f"""
-        You are an intelligent AI teaching assistant with access to general knowledge and specific lecture content.
-        
-        The student has asked a question about a lecture. Here's the lecture transcript for context:
-        
-        LECTURE TRANSCRIPT (with timestamps):
-        {truncated_transcript}
-        
-        STUDENT QUESTION:
-        {question}
-        
-        INSTRUCTIONS:
-        1. If the question is about the lecture content, use the transcript as your primary source
-        2. If the question is general knowledge (like "What is the capital of India?"), answer it directly 
-        3. If the question relates to the lecture topic, provide the answer and reference where it appears in the transcript
-        4. If the transcript was truncated, mention that you only have access to partial content
-        5. Be helpful, educational, and conversational
-        6. For transcript references, include timestamps like "mentioned at 15:30"
-        
-        Please provide a comprehensive answer based on the available information.
-        """
-        
-        print(f"Calling Groq API with prompt length: {len(prompt)}")
-        response = _ask_groq(prompt)
-        print(f"Groq API response received: {response[:100] if response else 'No response'}")
-        return response or "I apologize, but I couldn't generate a response. Please try again."
-        
+LECTURE TRANSCRIPT:
+{context}
+
+STUDENT QUESTION:
+{question}
+
+INSTRUCTIONS:
+- If the question is about the lecture, answer using the transcript as your primary source.
+- If it is a general knowledge question, answer it directly.
+- Reference specific parts of the lecture where relevant (e.g. "As mentioned around 5:30…").
+- Be clear, educational, and concise.
+
+ANSWER:"""
+
+        print(f"Calling Groq (prompt length: {len(prompt)} chars)")
+        response = _call_groq(prompt, temperature=0.4, max_tokens=1500)
+        print(f"Groq response: {response[:80] if response else 'empty'}")
+        return response or "I couldn't generate a response. Please try rephrasing your question."
+
     except Exception as e:
-        print(f"Error in ask_ai_about_lecture: {e}")
+        print(f"AI Assistant error: {e}")
         import traceback
         traceback.print_exc()
-        return "I'm sorry, I encountered an error while processing your question. Please try again or rephrase your question."
+        return "I encountered an error while processing your question. Please try again."

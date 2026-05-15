@@ -1,47 +1,76 @@
 "use client"
 
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { useAuth } from '@/context/AuthContext';
 import api from '@/services/api';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import {
     ArrowLeft, User, Mail, Shield, Building2,
-    Copy, CheckCircle, LogOut, BookOpen, School, ChevronRight
+    Copy, CheckCircle, LogOut, BookOpen, School, ChevronRight, Zap
 } from 'lucide-react';
+
+/* ── Role config — single source of truth ── */
+type RoleKey = 'student' | 'teacher' | 'admin' | 'superadmin';
+
+const ROLE_CONFIG: Record<RoleKey, {
+    label: string;
+    icon: React.ReactNode;
+    badge: string;          // tailwind classes for the badge pill
+    avatar: string;         // tailwind classes for the avatar box
+    dashLink: string;
+    dashLabel: string;
+}> = {
+    student: {
+        label: 'Student',
+        icon: <BookOpen size={16} />,
+        badge: 'bg-green-50 text-green-700 border-green-200',
+        avatar: 'bg-green-600 shadow-green-200',
+        dashLink: '/student/dashboard',
+        dashLabel: 'Student Dashboard',
+    },
+    teacher: {
+        label: 'Teacher',
+        icon: <School size={16} />,
+        badge: 'bg-orange-50 text-orange-700 border-orange-200',
+        avatar: 'bg-orange-500 shadow-orange-200',
+        dashLink: '/teacher/dashboard',
+        dashLabel: 'Teacher Dashboard',
+    },
+    admin: {
+        label: 'Organization Admin',
+        icon: <Building2 size={16} />,
+        badge: 'bg-purple-50 text-purple-700 border-purple-200',
+        avatar: 'bg-purple-600 shadow-purple-200',
+        dashLink: '/org/dashboard',
+        dashLabel: 'Org Dashboard',
+    },
+    superadmin: {
+        label: 'Super Admin',
+        icon: <Zap size={16} />,
+        badge: 'bg-gray-900 text-white border-gray-700',
+        avatar: 'bg-gray-900 shadow-gray-400',
+        dashLink: '/org/dashboard',
+        dashLabel: 'Org Dashboard',
+    },
+};
 
 export default function ProfilePage() {
     const { user, logout } = useAuth();
     const router = useRouter();
 
-    // Join org state
     const [orgCode, setOrgCode] = useState('');
     const [orgName, setOrgName] = useState('');
     const [joinStatus, setJoinStatus] = useState('');
     const [joinError, setJoinError] = useState('');
     const [joining, setJoining] = useState(false);
-
-    const [orgDetails, setOrgDetails] = useState<any>(null);
     const [copied, setCopied] = useState(false);
-
-    useEffect(() => {
-        if (!user) { router.replace('/login'); return; }
-        if (['admin', 'superadmin'].includes(user.role)) { router.replace('/org/dashboard'); }
-    }, [user, router]);
-
-    useEffect(() => {
-        if (user?.organizationId) {
-            // Fetch org details for display
-            api.get('/auth/me').catch(() => null);
-        }
-    }, [user]);
 
     const handleJoinOrg = async () => {
         setJoinStatus('');
         setJoinError('');
         if (!orgCode.trim()) { setJoinError('Organization code is required.'); return; }
         if (!orgName.trim()) { setJoinError('Organization name is required.'); return; }
-
         setJoining(true);
         try {
             const { data } = await api.post('/auth/join-organization', {
@@ -70,88 +99,116 @@ export default function ProfilePage() {
         </div>
     );
 
-    const isStudent = user.role === 'student';
-    const dashLink = isStudent ? '/student/dashboard' : '/teacher/dashboard';
-    const roleColor = isStudent ? 'bg-green-50 text-green-600 border-green-100' : 'bg-orange-50 text-orange-600 border-orange-100';
-    const roleIcon = isStudent ? <BookOpen size={16} /> : <School size={16} />;
+    // Normalise role — fall back to 'student' only if truly unknown
+    const roleKey = (user.role as RoleKey) in ROLE_CONFIG
+        ? (user.role as RoleKey)
+        : 'student';
+    const cfg = ROLE_CONFIG[roleKey];
+
+    const isOrgRole = ['admin', 'superadmin'].includes(user.role);
+    const canJoinOrg = ['student', 'teacher'].includes(user.role) && !user.organizationId;
 
     return (
         <div className="min-h-screen bg-[#FDFDFF] font-sans pb-20">
             {/* Nav */}
             <nav className="sticky top-0 z-50 bg-white/80 backdrop-blur-xl border-b border-gray-100 px-6 py-4">
                 <div className="max-w-2xl mx-auto flex items-center justify-between">
-                    <Link href={dashLink} className="flex items-center gap-2 text-xs font-black uppercase tracking-widest text-gray-400 hover:text-blue-600 transition-colors">
-                        <ArrowLeft size={16} /> Dashboard
+                    <Link
+                        href={cfg.dashLink}
+                        className="flex items-center gap-2 text-xs font-black uppercase tracking-widest text-gray-400 hover:text-blue-600 transition-colors"
+                    >
+                        <ArrowLeft size={16} /> {cfg.dashLabel}
                     </Link>
-                    <button onClick={logout} className="flex items-center gap-2 text-xs font-black uppercase tracking-widest text-gray-400 hover:text-red-500 transition-colors">
+                    <button
+                        onClick={logout}
+                        className="flex items-center gap-2 text-xs font-black uppercase tracking-widest text-gray-400 hover:text-red-500 transition-colors"
+                    >
                         <LogOut size={15} /> Sign Out
                     </button>
                 </div>
             </nav>
 
             <div className="max-w-2xl mx-auto px-6 py-10 space-y-6">
-                {/* Profile card */}
+
+                {/* ── Profile card ── */}
                 <div className="bg-white rounded-[40px] border border-gray-100 p-8">
-                    {/* Avatar */}
                     <div className="flex items-center gap-5 mb-8">
-                        <div className="w-20 h-20 bg-blue-600 rounded-3xl flex items-center justify-center text-white text-3xl font-black shadow-xl shadow-blue-200 flex-shrink-0">
+                        {/* Avatar with role-specific colour */}
+                        <div className={`w-20 h-20 ${cfg.avatar} rounded-3xl flex items-center justify-center text-white text-3xl font-black shadow-xl flex-shrink-0`}>
                             {user.name.charAt(0).toUpperCase()}
                         </div>
                         <div>
                             <h1 className="text-3xl font-black text-gray-900 tracking-tighter">{user.name}</h1>
-                            <div className={`inline-flex items-center gap-2 mt-2 px-3 py-1.5 rounded-xl border text-xs font-black uppercase tracking-widest ${roleColor}`}>
-                                {roleIcon} {user.role}
+                            {/* Role badge — fully adaptive */}
+                            <div className={`inline-flex items-center gap-2 mt-2 px-3 py-1.5 rounded-xl border text-xs font-black uppercase tracking-widest ${cfg.badge}`}>
+                                {cfg.icon}
+                                {cfg.label}
                             </div>
                         </div>
                     </div>
 
-                    {/* Info rows */}
                     <div className="space-y-3">
-                        <InfoRow icon={<Mail size={16} />} label="Email" value={user.email} />
-                        <InfoRow icon={<Shield size={16} />} label="Role" value={user.role.charAt(0).toUpperCase() + user.role.slice(1)} />
-                        <InfoRow icon={<User size={16} />} label="Account ID" value={user._id} mono />
+                        <InfoRow icon={<Mail size={16} />}   label="Email"      value={user.email} />
+                        <InfoRow icon={<Shield size={16} />} label="Role"       value={cfg.label} />
+                        <InfoRow icon={<User size={16} />}   label="Account ID" value={user._id} mono />
                     </div>
                 </div>
 
-                {/* Organization card */}
+                {/* ── Organization card ── */}
                 <div className="bg-white rounded-[40px] border border-gray-100 p-8">
                     <h2 className="text-2xl font-black text-gray-900 uppercase tracking-tight mb-6">Organization</h2>
 
                     {user.organizationId ? (
-                        <div>
-                            {/* Already in an org */}
+                        <>
+                            {/* Joined org info */}
                             <div className="flex items-center gap-4 p-5 bg-green-50 border border-green-100 rounded-2xl mb-4">
                                 <div className="w-12 h-12 bg-green-100 rounded-2xl flex items-center justify-center flex-shrink-0">
                                     <Building2 size={22} className="text-green-600" />
                                 </div>
                                 <div className="flex-1 min-w-0">
-                                    <p className="text-[10px] font-black uppercase tracking-widest text-green-500 mb-0.5">Joined</p>
-                                    <p className="font-black text-gray-900 text-lg truncate">{user.organizationName || 'Your Organization'}</p>
+                                    <p className="text-[10px] font-black uppercase tracking-widest text-green-500 mb-0.5">
+                                        {isOrgRole ? 'Managing' : 'Member of'}
+                                    </p>
+                                    <p className="font-black text-gray-900 text-lg truncate">
+                                        {user.organizationName || 'Your Organization'}
+                                    </p>
                                 </div>
                                 <CheckCircle size={22} className="text-green-500 flex-shrink-0" />
                             </div>
 
+                            {/* Invite code — visible to all org members for easy sharing */}
                             {user.organizationCode && (
                                 <div className="flex items-center justify-between p-4 bg-gray-50 rounded-2xl border border-gray-100">
                                     <div>
-                                        <p className="text-[9px] font-black uppercase tracking-widest text-gray-400 mb-0.5">Organization Code</p>
-                                        <p className="font-black text-gray-900 tracking-widest text-lg">{user.organizationCode}</p>
+                                        <p className="text-[9px] font-black uppercase tracking-widest text-gray-400 mb-0.5">
+                                            {isOrgRole ? 'Your Invite Code' : 'Organization Code'}
+                                        </p>
+                                        <p className="font-black text-gray-900 tracking-widest text-xl">{user.organizationCode}</p>
                                     </div>
                                     <button
                                         onClick={() => copyCode(user.organizationCode!)}
-                                        className="w-10 h-10 bg-white border border-gray-100 rounded-xl flex items-center justify-center hover:bg-blue-600 hover:text-white hover:border-blue-600 transition-all"
+                                        className="flex items-center gap-2 px-4 py-2.5 bg-white border-2 border-gray-100 rounded-xl hover:border-blue-400 hover:text-blue-600 transition-all text-xs font-black uppercase tracking-widest"
                                     >
-                                        {copied ? <CheckCircle size={16} className="text-green-500" /> : <Copy size={16} />}
+                                        {copied ? <CheckCircle size={13} className="text-green-500" /> : <Copy size={13} />}
+                                        {copied ? 'Copied!' : 'Copy'}
                                     </button>
                                 </div>
                             )}
-                        </div>
-                    ) : (
-                        <div>
+
+                            {/* Admin tip */}
+                            {isOrgRole && (
+                                <p className="mt-3 text-[10px] font-bold text-gray-400 ml-1">
+                                    Share this code + your organization name with teachers and students so they can join.
+                                </p>
+                            )}
+                        </>
+                    ) : canJoinOrg ? (
+                        /* ── Join org form (student / teacher without org) ── */
+                        <>
                             <div className="flex items-start gap-3 p-4 bg-blue-50 border border-blue-100 rounded-2xl mb-6">
                                 <Building2 size={16} className="text-blue-600 mt-0.5 flex-shrink-0" />
                                 <p className="text-sm font-bold text-blue-700">
-                                    You're on a <strong>personal account</strong>. Join an organization to access shared lectures from your institution.
+                                    You have a <strong>personal account</strong>. Join an organization to access shared lectures from your institution.
                                 </p>
                             </div>
 
@@ -200,19 +257,27 @@ export default function ProfilePage() {
                                     <p className="text-sm font-bold text-red-600">{joinError}</p>
                                 </div>
                             )}
-                        </div>
+                        </>
+                    ) : (
+                        /* No org and not student/teacher (shouldn't normally happen) */
+                        <p className="text-gray-400 font-bold text-sm">No organization linked to this account.</p>
                     )}
                 </div>
 
-                {/* Quick links */}
+                {/* ── Quick links ── */}
                 <div className="bg-white rounded-[40px] border border-gray-100 p-8">
                     <h2 className="text-2xl font-black text-gray-900 uppercase tracking-tight mb-4">Quick Links</h2>
                     <div className="space-y-2">
                         {[
-                            { href: dashLink, label: 'Go to Dashboard', desc: 'Back to your main workspace' },
-                            ...(user.organizationId ? [{ href: dashLink + '#org', label: 'Organization Lectures', desc: 'Browse shared content' }] : []),
+                            { href: cfg.dashLink, label: cfg.dashLabel, desc: 'Back to your main workspace' },
+                            ...(user.organizationId && !isOrgRole
+                                ? [{ href: `${cfg.dashLink}#org`, label: 'Organization Lectures', desc: 'Browse shared content from your institution' }]
+                                : []),
+                            ...(isOrgRole
+                                ? [{ href: '/admin/users', label: 'Manage Members', desc: 'Add or update teachers and students' }]
+                                : []),
                         ].map(({ href, label, desc }) => (
-                            <Link key={href} href={href} className="flex items-center justify-between p-4 bg-gray-50 rounded-2xl hover:bg-blue-50 hover:border-blue-100 border border-transparent transition-all group">
+                            <Link key={label} href={href} className="flex items-center justify-between p-4 bg-gray-50 rounded-2xl hover:bg-blue-50 hover:border-blue-100 border border-transparent transition-all group">
                                 <div>
                                     <p className="font-black text-gray-800 group-hover:text-blue-600 transition-colors text-sm">{label}</p>
                                     <p className="text-xs font-bold text-gray-400 mt-0.5">{desc}</p>
@@ -222,6 +287,7 @@ export default function ProfilePage() {
                         ))}
                     </div>
                 </div>
+
             </div>
         </div>
     );
