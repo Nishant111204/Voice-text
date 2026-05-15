@@ -49,13 +49,22 @@ const registerUser = asyncHandler(async (req, res) => {
     }
 
     let organization = null;
-    if (organizationId) {
-        organization = await Organization.findById(organizationId);
-        if (!organization) {
-            res.status(404);
-            throw new Error('Organization not found');
+
+    const hasCode = organizationCode && organizationCode.trim();
+    const hasName = organizationName && organizationName.trim();
+
+    if (hasCode || hasName) {
+        // If only one of the two is provided → error
+        if (!hasCode) {
+            res.status(400);
+            throw new Error('Organization code is required when joining an organization.');
         }
-    } else if (organizationCode && organizationCode.trim()) {
+        if (!hasName) {
+            res.status(400);
+            throw new Error('Organization name is required when joining an organization.');
+        }
+
+        // Find by code (unique) first
         organization = await Organization.findOne({
             organizationCode: organizationCode.trim().toUpperCase(),
         });
@@ -63,16 +72,14 @@ const registerUser = asyncHandler(async (req, res) => {
             res.status(404);
             throw new Error('Organization code not found. Check the code and try again.');
         }
-    } else if (organizationName && organizationName.trim()) {
-        organization = await Organization.findOne({
-            nameNormalized: organizationName.trim().toLowerCase(),
-        });
-        if (!organization) {
-            res.status(404);
-            throw new Error('Organization not found. Leave the fields blank to create a personal account.');
+
+        // Cross-verify name matches
+        if (organization.nameNormalized !== organizationName.trim().toLowerCase()) {
+            res.status(400);
+            throw new Error('Organization name does not match this code. Please check both fields.');
         }
     }
-    // No org fields provided → personal account (no org linked)
+    // Both fields blank → personal account (no org linked)
 
     const user = await User.create({
         name,
@@ -211,9 +218,15 @@ const getMe = asyncHandler(async (req, res) => {
 // @access  Private (student/teacher)
 const joinOrganization = asyncHandler(async (req, res) => {
     const { organizationName, organizationCode } = req.body;
-    if (!organizationName && !organizationCode) {
+
+    // BOTH fields are required — code is unique, name cross-verifies intent
+    if (!organizationCode || !organizationCode.trim()) {
         res.status(400);
-        throw new Error('Organization name or code is required');
+        throw new Error('Organization code is required (e.g. ORG-AB12CD).');
+    }
+    if (!organizationName || !organizationName.trim()) {
+        res.status(400);
+        throw new Error('Organization name is required along with the code.');
     }
 
     const safeRole = req.user.role;
@@ -222,25 +235,20 @@ const joinOrganization = asyncHandler(async (req, res) => {
         throw new Error('Only student/teacher can join organizations');
     }
 
-    // Look up by code first (most reliable), then by name
-    let organization = null;
-    if (organizationCode && organizationCode.trim()) {
-        organization = await Organization.findOne({
-            organizationCode: organizationCode.trim().toUpperCase(),
-        });
-    }
-    if (!organization && organizationName && organizationName.trim()) {
-        const norm = organizationName.trim().toLowerCase();
-        organization =
-            (await Organization.findOne({ nameNormalized: norm })) ||
-            (await Organization.findOne({
-                name: { $regex: new RegExp(`^${escapeRegExp(organizationName.trim())}$`, 'i') },
-            }));
-    }
+    // Find by code (guaranteed unique)
+    const organization = await Organization.findOne({
+        organizationCode: organizationCode.trim().toUpperCase(),
+    });
 
     if (!organization) {
         res.status(404);
-        throw new Error('Organization not found');
+        throw new Error('Organization code not found. Check the code and try again.');
+    }
+
+    // Cross-verify that the name also matches
+    if (organization.nameNormalized !== organizationName.trim().toLowerCase()) {
+        res.status(400);
+        throw new Error('Organization name does not match this code. Please check both fields.');
     }
 
     // If already linked, just return current profile

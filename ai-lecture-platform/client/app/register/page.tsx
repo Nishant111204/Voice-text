@@ -5,7 +5,7 @@ import { useSearchParams } from 'next/navigation';
 import { useAuth } from '@/context/AuthContext';
 import api from '@/services/api';
 import Link from 'next/link';
-import { BookOpen, School, Building2, Presentation, ChevronRight, ArrowLeft, Hash, Chrome } from 'lucide-react';
+import { BookOpen, School, Building2, Presentation, ChevronRight, ArrowLeft } from 'lucide-react';
 
 const BACKEND = process.env.NEXT_PUBLIC_API_URL?.replace('/api', '') || 'http://localhost:5000';
 
@@ -19,8 +19,6 @@ const GoogleIcon = () => (
 );
 
 type Role = 'student' | 'teacher' | 'admin';
-type JoinMode = 'code' | 'name';
-
 function RegisterForm() {
     const searchParams = useSearchParams();
     const [step, setStep] = useState<'pick-role' | 'fill-form'>('pick-role');
@@ -31,8 +29,7 @@ function RegisterForm() {
     const [email, setEmail] = useState('');
     const [password, setPassword] = useState('');
 
-    // Org join (student / teacher) — toggle between code and name
-    const [joinMode, setJoinMode] = useState<JoinMode>('code');
+    // Org join (student / teacher) — both required
     const [orgCode, setOrgCode] = useState('');
     const [orgName, setOrgName] = useState('');
 
@@ -69,14 +66,14 @@ function RegisterForm() {
                     organizationType: orgType,
                 });
             } else {
-                // Build org payload based on which field the user filled
-                const orgPayload: Record<string, string> = {};
-                if (joinMode === 'code' && orgCode.trim()) {
-                    orgPayload.organizationCode = orgCode.trim().toUpperCase();
-                } else if (joinMode === 'name' && orgName.trim()) {
-                    orgPayload.organizationName = orgName.trim();
+                // Both code AND name required to join an org; both empty = personal account
+                const wantsOrg = orgCode.trim() || orgName.trim();
+                if (wantsOrg && (!orgCode.trim() || !orgName.trim())) {
+                    throw new Error('Please fill both the organization code and name, or leave both blank for a personal account.');
                 }
-                // If neither filled → personal account (no org)
+                const orgPayload: Record<string, string> = wantsOrg
+                    ? { organizationCode: orgCode.trim().toUpperCase(), organizationName: orgName.trim() }
+                    : {};
 
                 response = await api.post('/auth/register', {
                     name,
@@ -270,60 +267,30 @@ function RegisterForm() {
                             </>
                         )}
 
-                        {/* ── Student / Teacher: join existing org (optional) ── */}
+                        {/* ── Student / Teacher: join existing org (optional, but both fields required) ── */}
                         {role !== 'admin' && (
-                            <div className="pt-1">
-                                <div className="flex items-center justify-between mb-3">
-                                    <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest ml-1">
-                                        Join Organization <span className="text-gray-300 normal-case font-bold tracking-normal">(optional)</span>
-                                    </label>
-                                    {/* Code / Name toggle */}
-                                    <div className="flex items-center gap-0.5 bg-gray-100 p-0.5 rounded-xl">
-                                        <button
-                                            type="button"
-                                            onClick={() => { setJoinMode('code'); setOrgName(''); }}
-                                            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all ${joinMode === 'code' ? 'bg-white shadow-sm text-blue-600' : 'text-gray-400'}`}
-                                        >
-                                            <Hash size={10} /> Code
-                                        </button>
-                                        <button
-                                            type="button"
-                                            onClick={() => { setJoinMode('name'); setOrgCode(''); }}
-                                            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all ${joinMode === 'name' ? 'bg-white shadow-sm text-blue-600' : 'text-gray-400'}`}
-                                        >
-                                            <Building2 size={10} /> Name
-                                        </button>
-                                    </div>
-                                </div>
-
-                                {joinMode === 'code' ? (
-                                    <>
-                                        <input
-                                            type="text"
-                                            placeholder="ORG-XXXXXX"
-                                            value={orgCode}
-                                            onChange={e => setOrgCode(e.target.value.toUpperCase())}
-                                            maxLength={10}
-                                            className="w-full px-5 py-3.5 bg-gray-50 border border-gray-100 rounded-2xl focus:ring-2 focus:ring-blue-500 focus:bg-white transition-all font-black text-gray-700 outline-none tracking-widest uppercase"
-                                        />
-                                        <p className="text-[10px] font-bold text-gray-400 mt-2 ml-1">
-                                            Enter the organization code (e.g. ORG-AB12CD) shared by your admin.
-                                        </p>
-                                    </>
-                                ) : (
-                                    <>
-                                        <input
-                                            type="text"
-                                            placeholder="My University"
-                                            value={orgName}
-                                            onChange={e => setOrgName(e.target.value)}
-                                            className="w-full px-5 py-3.5 bg-gray-50 border border-gray-100 rounded-2xl focus:ring-2 focus:ring-blue-500 focus:bg-white transition-all font-bold text-gray-700 outline-none"
-                                        />
-                                        <p className="text-[10px] font-bold text-gray-400 mt-2 ml-1">
-                                            Enter the exact name of your institution. Leave blank for a personal account.
-                                        </p>
-                                    </>
-                                )}
+                            <div className="pt-1 space-y-3">
+                                <label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest ml-1">
+                                    Join Organization <span className="text-gray-300 normal-case font-bold tracking-normal">(optional — leave both blank for personal account)</span>
+                                </label>
+                                <input
+                                    type="text"
+                                    placeholder="ORG-XXXXXX"
+                                    value={orgCode}
+                                    onChange={e => setOrgCode(e.target.value.toUpperCase())}
+                                    maxLength={10}
+                                    className="w-full px-5 py-3.5 bg-gray-50 border border-gray-100 rounded-2xl focus:ring-2 focus:ring-blue-500 focus:bg-white transition-all font-black text-gray-700 outline-none tracking-widest uppercase"
+                                />
+                                <input
+                                    type="text"
+                                    placeholder="Organization name (e.g. My University)"
+                                    value={orgName}
+                                    onChange={e => setOrgName(e.target.value)}
+                                    className="w-full px-5 py-3.5 bg-gray-50 border border-gray-100 rounded-2xl focus:ring-2 focus:ring-blue-500 focus:bg-white transition-all font-bold text-gray-700 outline-none"
+                                />
+                                <p className="text-[10px] font-bold text-gray-400 ml-1">
+                                    Both code and name must match. Get the code from your admin or teacher.
+                                </p>
                             </div>
                         )}
 

@@ -31,8 +31,14 @@ export default function StudentDashboard() {
     const [urlTitle, setUrlTitle] = useState('');
 
     // Join org state
+    const [joinOrgCode, setJoinOrgCode] = useState('');
     const [joinOrgName, setJoinOrgName] = useState('');
     const [joinStatus, setJoinStatus] = useState('');
+    const [joinError, setJoinError] = useState('');
+
+    // Search / filter
+    const [searchQuery, setSearchQuery] = useState('');
+    const [statusFilter, setStatusFilter] = useState<'all' | 'completed' | 'processing'>('all');
 
     const mediaRecorderRef = useRef<MediaRecorder | null>(null);
     const socketRef = useRef<any>(null);
@@ -167,15 +173,24 @@ export default function StudentDashboard() {
     const stopRecording = () => mediaRecorderRef.current?.stop();
 
     const handleJoinOrg = async () => {
-        if (!joinOrgName.trim()) return;
+        setJoinStatus('');
+        setJoinError('');
+        if (!joinOrgCode.trim() || !joinOrgName.trim()) {
+            setJoinError('Both organization code and name are required.');
+            return;
+        }
         setJoinStatus('Joining...');
         try {
-            const { data } = await api.post('/auth/join-organization', { organizationName: joinOrgName.trim() });
+            const { data } = await api.post('/auth/join-organization', {
+                organizationCode: joinOrgCode.trim().toUpperCase(),
+                organizationName: joinOrgName.trim(),
+            });
             localStorage.setItem('token', data.token);
-            setJoinStatus('Joined! Refreshing...');
-            setTimeout(() => window.location.reload(), 800);
+            setJoinStatus(`Joined ${data.organizationName}! Refreshing…`);
+            setTimeout(() => window.location.reload(), 1000);
         } catch (e: any) {
-            setJoinStatus(e?.response?.data?.message || 'Organization not found.');
+            setJoinStatus('');
+            setJoinError(e?.response?.data?.message || 'Could not join organization. Check both fields.');
         }
     };
 
@@ -379,9 +394,37 @@ export default function StudentDashboard() {
                             </div>
                         </div>
 
-                        {/* Personal lecture list */}
-                        <h2 className="text-3xl font-black text-gray-900 tracking-tighter uppercase mb-6">My Private Vault</h2>
-                        <LectureGrid lectures={myLectures} userId={user._id} emptyMsg="No personal lectures yet. Record or upload above." />
+                        {/* Search + filter */}
+                        <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4 mb-6">
+                            <h2 className="text-3xl font-black text-gray-900 tracking-tighter uppercase">My Private Vault</h2>
+                            <div className="flex-1 flex items-center gap-3 sm:justify-end flex-wrap">
+                                <div className="relative">
+                                    <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+                                    <input
+                                        value={searchQuery}
+                                        onChange={e => setSearchQuery(e.target.value)}
+                                        placeholder="Search lectures…"
+                                        className="pl-9 pr-4 py-2.5 bg-gray-50 border border-gray-100 rounded-2xl text-sm font-bold text-gray-700 outline-none focus:ring-2 focus:ring-blue-400 w-52"
+                                    />
+                                </div>
+                                <div className="flex items-center gap-1 bg-gray-100 p-1 rounded-2xl">
+                                    {(['all', 'completed', 'processing'] as const).map(f => (
+                                        <button key={f} onClick={() => setStatusFilter(f)}
+                                            className={`px-3 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${statusFilter === f ? 'bg-white shadow-sm text-blue-600' : 'text-gray-400'}`}>
+                                            {f}
+                                        </button>
+                                    ))}
+                                </div>
+                            </div>
+                        </div>
+                        <LectureGrid
+                            lectures={myLectures.filter(l =>
+                                l.title.toLowerCase().includes(searchQuery.toLowerCase()) &&
+                                (statusFilter === 'all' || l.status === statusFilter)
+                            )}
+                            userId={user._id}
+                            emptyMsg={searchQuery || statusFilter !== 'all' ? 'No lectures match your search.' : 'No personal lectures yet. Record or upload above.'}
+                        />
                     </div>
                 )}
 
@@ -389,27 +432,50 @@ export default function StudentDashboard() {
                 {activeSection === 'org' && (
                     <div>
                         {!hasOrg ? (
-                            /* Join org CTA */
-                            <div className="bg-blue-600 rounded-[40px] p-12 text-white text-center max-w-2xl mx-auto">
-                                <div className="w-20 h-20 bg-white/20 rounded-3xl flex items-center justify-center mx-auto mb-6">
-                                    <Building2 size={40} className="text-white" />
+                            <div className="bg-blue-600 rounded-[40px] p-10 text-white max-w-2xl mx-auto">
+                                <div className="flex items-center gap-4 mb-6">
+                                    <div className="w-16 h-16 bg-white/20 rounded-2xl flex items-center justify-center flex-shrink-0">
+                                        <Building2 size={32} className="text-white" />
+                                    </div>
+                                    <div>
+                                        <h2 className="text-2xl font-black uppercase tracking-tight">Join an Organization</h2>
+                                        <p className="text-white/70 font-medium text-sm mt-1">Enter both the organization code and name to verify and join.</p>
+                                    </div>
                                 </div>
-                                <h2 className="text-3xl font-black uppercase tracking-tight mb-3">Join an Organization</h2>
-                                <p className="text-white/80 font-medium mb-8">Get access to shared lectures from your institution's teachers.</p>
-                                {joinStatus && <p className="text-white/90 font-bold mb-4">{joinStatus}</p>}
-                                <div className="flex gap-3 max-w-sm mx-auto">
-                                    <input
-                                        value={joinOrgName}
-                                        onChange={e => setJoinOrgName(e.target.value)}
-                                        placeholder="Organization name"
-                                        className="flex-1 px-4 py-3 bg-white/10 border border-white/20 text-white placeholder-white/50 rounded-2xl font-bold outline-none focus:ring-2 focus:ring-white/50"
-                                    />
+
+                                {joinError && (
+                                    <div className="mb-4 p-3 bg-white/10 border border-white/20 rounded-2xl text-sm font-bold text-white/90">{joinError}</div>
+                                )}
+                                {joinStatus && (
+                                    <div className="mb-4 p-3 bg-white/20 rounded-2xl text-sm font-bold text-white">{joinStatus}</div>
+                                )}
+
+                                <div className="space-y-3">
+                                    <div>
+                                        <label className="block text-[10px] font-black uppercase tracking-widest text-white/60 mb-1.5">Organization Code <span className="text-white/40 normal-case font-bold tracking-normal">(e.g. ORG-AB12CD)</span></label>
+                                        <input
+                                            value={joinOrgCode}
+                                            onChange={e => setJoinOrgCode(e.target.value.toUpperCase())}
+                                            placeholder="ORG-XXXXXX"
+                                            maxLength={10}
+                                            className="w-full px-4 py-3 bg-white/10 border border-white/20 text-white placeholder-white/40 rounded-2xl font-black outline-none focus:ring-2 focus:ring-white/50 tracking-widest uppercase"
+                                        />
+                                    </div>
+                                    <div>
+                                        <label className="block text-[10px] font-black uppercase tracking-widest text-white/60 mb-1.5">Organization Name</label>
+                                        <input
+                                            value={joinOrgName}
+                                            onChange={e => setJoinOrgName(e.target.value)}
+                                            placeholder="My University / School"
+                                            className="w-full px-4 py-3 bg-white/10 border border-white/20 text-white placeholder-white/40 rounded-2xl font-bold outline-none focus:ring-2 focus:ring-white/50"
+                                        />
+                                    </div>
                                     <button
                                         onClick={handleJoinOrg}
-                                        disabled={!joinOrgName.trim()}
-                                        className="px-6 py-3 bg-white text-blue-600 rounded-2xl font-black text-xs uppercase tracking-widest disabled:opacity-50"
+                                        disabled={!joinOrgCode.trim() || !joinOrgName.trim()}
+                                        className="w-full py-3.5 bg-white text-blue-600 rounded-2xl font-black text-xs uppercase tracking-widest disabled:opacity-50 transition-all hover:bg-blue-50"
                                     >
-                                        Join
+                                        Join Organization
                                     </button>
                                 </div>
                             </div>
@@ -422,8 +488,23 @@ export default function StudentDashboard() {
                                         These lectures are shared by your teachers at <strong>{user.organizationName}</strong>. You cannot edit or delete them.
                                     </p>
                                 </div>
-                                <h2 className="text-3xl font-black text-gray-900 tracking-tighter uppercase mb-6">Shared by Organization</h2>
-                                <LectureGrid lectures={orgLectures} userId={user._id} emptyMsg="No shared lectures yet. Your teachers haven't shared any content." />
+                                <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4 mb-6">
+                                    <h2 className="text-3xl font-black text-gray-900 tracking-tighter uppercase">Shared by Organization</h2>
+                                    <div className="relative sm:ml-auto">
+                                        <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+                                        <input
+                                            value={searchQuery}
+                                            onChange={e => setSearchQuery(e.target.value)}
+                                            placeholder="Search…"
+                                            className="pl-9 pr-4 py-2.5 bg-gray-50 border border-gray-100 rounded-2xl text-sm font-bold text-gray-700 outline-none focus:ring-2 focus:ring-blue-400 w-48"
+                                        />
+                                    </div>
+                                </div>
+                                <LectureGrid
+                                    lectures={orgLectures.filter(l => l.title.toLowerCase().includes(searchQuery.toLowerCase()))}
+                                    userId={user._id}
+                                    emptyMsg={searchQuery ? 'No lectures match your search.' : "No shared lectures yet. Your teachers haven't shared any content."}
+                                />
                             </>
                         )}
                     </div>

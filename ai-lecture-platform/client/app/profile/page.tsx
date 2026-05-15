@@ -6,7 +6,7 @@ import api from '@/services/api';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import {
-    ArrowLeft, User, Mail, Shield, Building2, Hash,
+    ArrowLeft, User, Mail, Shield, Building2,
     Copy, CheckCircle, LogOut, BookOpen, School, ChevronRight
 } from 'lucide-react';
 
@@ -15,7 +15,6 @@ export default function ProfilePage() {
     const router = useRouter();
 
     // Join org state
-    const [joinMode, setJoinMode] = useState<'code' | 'name'>('code');
     const [orgCode, setOrgCode] = useState('');
     const [orgName, setOrgName] = useState('');
     const [joinStatus, setJoinStatus] = useState('');
@@ -40,21 +39,20 @@ export default function ProfilePage() {
     const handleJoinOrg = async () => {
         setJoinStatus('');
         setJoinError('');
-        if (joinMode === 'code' && !orgCode.trim()) return;
-        if (joinMode === 'name' && !orgName.trim()) return;
+        if (!orgCode.trim()) { setJoinError('Organization code is required.'); return; }
+        if (!orgName.trim()) { setJoinError('Organization name is required.'); return; }
 
         setJoining(true);
         try {
-            const payload = joinMode === 'code'
-                ? { organizationCode: orgCode.trim().toUpperCase() }
-                : { organizationName: orgName.trim() };
-
-            const { data } = await api.post('/auth/join-organization', payload);
+            const { data } = await api.post('/auth/join-organization', {
+                organizationCode: orgCode.trim().toUpperCase(),
+                organizationName: orgName.trim(),
+            });
             localStorage.setItem('token', data.token);
             setJoinStatus(`Successfully joined ${data.organizationName}! Refreshing…`);
             setTimeout(() => window.location.reload(), 1200);
         } catch (e: any) {
-            setJoinError(e?.response?.data?.message || 'Organization not found. Check and try again.');
+            setJoinError(e?.response?.data?.message || 'Could not join. Check both fields and try again.');
         } finally {
             setJoining(false);
         }
@@ -157,64 +155,39 @@ export default function ProfilePage() {
                                 </p>
                             </div>
 
-                            {/* Mode toggle */}
-                            <div className="flex items-center gap-1 bg-gray-100 p-1 rounded-2xl w-fit mb-6">
-                                <button
-                                    onClick={() => { setJoinMode('code'); setJoinError(''); setJoinStatus(''); }}
-                                    className={`flex items-center gap-2 px-5 py-2.5 rounded-xl text-xs font-black uppercase tracking-widest transition-all ${joinMode === 'code' ? 'bg-white shadow-sm text-blue-600' : 'text-gray-400'}`}
-                                >
-                                    <Hash size={12} /> By Code
-                                </button>
-                                <button
-                                    onClick={() => { setJoinMode('name'); setJoinError(''); setJoinStatus(''); }}
-                                    className={`flex items-center gap-2 px-5 py-2.5 rounded-xl text-xs font-black uppercase tracking-widest transition-all ${joinMode === 'name' ? 'bg-white shadow-sm text-blue-600' : 'text-gray-400'}`}
-                                >
-                                    <Building2 size={12} /> By Name
-                                </button>
-                            </div>
-
-                            {joinMode === 'code' ? (
+                            <div className="space-y-3">
                                 <div>
-                                    <label className="block text-[10px] font-black uppercase tracking-widest text-gray-400 mb-2">Organization Code</label>
-                                    <div className="flex gap-3">
-                                        <input
-                                            value={orgCode}
-                                            onChange={e => setOrgCode(e.target.value.toUpperCase())}
-                                            placeholder="ORG-XXXXXX"
-                                            maxLength={10}
-                                            className="flex-1 px-5 py-3.5 bg-gray-50 border border-gray-100 rounded-2xl focus:ring-2 focus:ring-blue-500 focus:bg-white transition-all font-black text-gray-700 outline-none tracking-widest uppercase"
-                                        />
-                                        <button
-                                            onClick={handleJoinOrg}
-                                            disabled={!orgCode.trim() || joining}
-                                            className="px-6 py-3.5 bg-blue-600 text-white rounded-2xl font-black text-xs uppercase tracking-widest hover:bg-blue-700 disabled:opacity-40 transition-all"
-                                        >
-                                            {joining ? '…' : 'Join'}
-                                        </button>
-                                    </div>
-                                    <p className="text-[10px] font-bold text-gray-400 mt-2 ml-1">Ask your admin or teacher for the 10-character organization code.</p>
+                                    <label className="block text-[10px] font-black uppercase tracking-widest text-gray-400 mb-2">
+                                        Organization Code <span className="text-gray-300 normal-case font-bold tracking-normal">(e.g. ORG-AB12CD)</span>
+                                    </label>
+                                    <input
+                                        value={orgCode}
+                                        onChange={e => setOrgCode(e.target.value.toUpperCase())}
+                                        placeholder="ORG-XXXXXX"
+                                        maxLength={10}
+                                        className="w-full px-5 py-3.5 bg-gray-50 border border-gray-100 rounded-2xl focus:ring-2 focus:ring-blue-500 focus:bg-white transition-all font-black text-gray-700 outline-none tracking-widest uppercase"
+                                    />
                                 </div>
-                            ) : (
                                 <div>
                                     <label className="block text-[10px] font-black uppercase tracking-widest text-gray-400 mb-2">Organization Name</label>
-                                    <div className="flex gap-3">
-                                        <input
-                                            value={orgName}
-                                            onChange={e => setOrgName(e.target.value)}
-                                            placeholder="My University"
-                                            className="flex-1 px-5 py-3.5 bg-gray-50 border border-gray-100 rounded-2xl focus:ring-2 focus:ring-blue-500 focus:bg-white transition-all font-bold text-gray-700 outline-none"
-                                        />
-                                        <button
-                                            onClick={handleJoinOrg}
-                                            disabled={!orgName.trim() || joining}
-                                            className="px-6 py-3.5 bg-blue-600 text-white rounded-2xl font-black text-xs uppercase tracking-widest hover:bg-blue-700 disabled:opacity-40 transition-all"
-                                        >
-                                            {joining ? '…' : 'Join'}
-                                        </button>
-                                    </div>
-                                    <p className="text-[10px] font-bold text-gray-400 mt-2 ml-1">Enter the exact name of your institution.</p>
+                                    <input
+                                        value={orgName}
+                                        onChange={e => setOrgName(e.target.value)}
+                                        placeholder="My University / School"
+                                        className="w-full px-5 py-3.5 bg-gray-50 border border-gray-100 rounded-2xl focus:ring-2 focus:ring-blue-500 focus:bg-white transition-all font-bold text-gray-700 outline-none"
+                                    />
                                 </div>
-                            )}
+                                <p className="text-[10px] font-bold text-gray-400">
+                                    Both fields are required. Get the code from your admin or teacher.
+                                </p>
+                                <button
+                                    onClick={handleJoinOrg}
+                                    disabled={!orgCode.trim() || !orgName.trim() || joining}
+                                    className="w-full py-3.5 bg-blue-600 text-white rounded-2xl font-black text-xs uppercase tracking-widest hover:bg-blue-700 disabled:opacity-40 transition-all shadow-lg shadow-blue-200"
+                                >
+                                    {joining ? 'Joining…' : 'Join Organization'}
+                                </button>
+                            </div>
 
                             {joinStatus && (
                                 <div className="mt-4 p-4 bg-green-50 border border-green-100 rounded-2xl flex items-center gap-3">
