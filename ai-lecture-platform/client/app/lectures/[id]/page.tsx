@@ -120,6 +120,11 @@ export default function LecturePage() {
     const [reprocessing, setReprocessing] = useState(false);
     const [reprocessMsg, setReprocessMsg] = useState('');
 
+    // Materials upload state
+    const [materialFile, setMaterialFile] = useState<File | null>(null);
+    const [materialUploading, setMaterialUploading] = useState(false);
+    const [materialMsg, setMaterialMsg] = useState('');
+
     const pollingRef  = useRef<ReturnType<typeof setInterval> | null>(null);
     const pollTickRef = useRef(0); // counts poll cycles to detect a stuck lecture
 
@@ -229,6 +234,29 @@ export default function LecturePage() {
         } finally { setTogglingVisibility(false); }
     };
 
+    const handleMaterialUpload = async () => {
+        if (!materialFile) return;
+        setMaterialUploading(true);
+        setMaterialMsg('');
+        const formData = new FormData();
+        formData.append('file', materialFile);
+        formData.append('name', materialFile.name);
+        try {
+            await api.post(`/lectures/${params.id}/materials`, formData, {
+                headers: { 'Content-Type': 'multipart/form-data' },
+            });
+            setMaterialMsg('Material uploaded successfully!');
+            setMaterialFile(null);
+            // Refresh lecture to show new material
+            const { data } = await api.get(`/lectures/${params.id}`);
+            setLecture(data);
+        } catch (e: any) {
+            setMaterialMsg(e.response?.data?.message || 'Upload failed. Please try again.');
+        } finally {
+            setMaterialUploading(false);
+        }
+    };
+
     const handleDownloadNotes = () => {
         if (!content) return;
         const txt = [
@@ -269,6 +297,14 @@ export default function LecturePage() {
     const isFailed = lecture.status === 'failed';
     const isOwner = user?._id === lecture.userId;
     const canShare = isOwner && ['teacher', 'admin', 'superadmin'].includes(user?.role || '') && !!user?.organizationId;
+    // Can add materials: owner always; or teacher/admin in the same org for shared lectures
+    const canAddMaterial = isOwner || (
+        ['teacher', 'admin', 'superadmin'].includes(user?.role || '') &&
+        !!user?.organizationId &&
+        !lecture.isPrivate &&
+        lecture.organizationId &&
+        lecture.organizationId === user?.organizationId
+    );
     const hasContent = !!content?.fullText?.trim();
     const transcriptText = hasContent ? content.fullText : '';
     const words = wc(transcriptText);
@@ -592,40 +628,164 @@ export default function LecturePage() {
 
                 {/* ── STUDY MATERIALS ── */}
                 {activeTab === 'materials' && (
-                    <div className="bg-white rounded-[32px] border border-gray-100 p-8">
-                        <h2 className="text-2xl font-black text-gray-900 uppercase tracking-tight mb-6">Study Materials</h2>
-                        {!hasMaterials ? (
-                            <div className="py-16 text-center">
-                                <div className="w-14 h-14 bg-gray-100 rounded-2xl flex items-center justify-center mx-auto mb-4">
-                                    <Paperclip size={26} className="text-gray-400" />
-                                </div>
-                                <p className="font-bold text-gray-400 uppercase tracking-tight text-sm">No materials attached yet.</p>
-                                <p className="text-xs text-gray-300 font-medium mt-2">
-                                    {isOwner ? 'Upload PDFs or slides from your dashboard.' : "The teacher hasn't attached any materials yet."}
+                    <div className="space-y-6">
+
+                        {/* Upload panel — teachers / admins / owner only */}
+                        {canAddMaterial && (
+                            <div className="bg-white rounded-[32px] border border-gray-100 p-8">
+                                <h2 className="text-2xl font-black text-gray-900 uppercase tracking-tight mb-2">Add Material</h2>
+                                <p className="text-sm font-medium text-gray-400 mb-6">
+                                    Upload a PDF, PowerPoint, or Word document to attach to this lecture.
                                 </p>
-                            </div>
-                        ) : (
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                {lecture.studyMaterials.map((mat: any, i: number) => (
-                                    <div key={i} className="flex items-center gap-4 p-5 bg-gray-50 rounded-2xl border border-gray-100 hover:border-blue-200 hover:bg-blue-50 transition-all group">
-                                        <div className="w-12 h-12 bg-white rounded-2xl flex items-center justify-center border border-gray-100 flex-shrink-0">
-                                            <span className="text-[10px] font-black text-gray-500 uppercase">{mat.fileType || 'FILE'}</span>
-                                        </div>
-                                        <div className="flex-1 min-w-0">
-                                            <p className="font-black text-gray-800 truncate text-sm">{mat.name}</p>
-                                            <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mt-0.5">{mat.fileType?.toUpperCase()}</p>
-                                        </div>
-                                        {mat.url && (
-                                            <a href={`${process.env.NEXT_PUBLIC_API_URL?.replace('/api', '')}/${mat.url}`}
-                                                target="_blank" rel="noopener noreferrer"
-                                                className="w-9 h-9 bg-white border border-gray-100 rounded-xl flex items-center justify-center hover:bg-blue-600 hover:text-white hover:border-blue-600 transition-all flex-shrink-0">
-                                                <Download size={15} />
-                                            </a>
+
+                                {/* Drop zone */}
+                                <label className={`relative flex flex-col items-center justify-center gap-4 p-10 border-2 border-dashed rounded-[28px] cursor-pointer transition-all ${
+                                    materialFile
+                                        ? 'border-blue-400 bg-blue-50'
+                                        : 'border-gray-100 hover:border-blue-300 hover:bg-gray-50'
+                                }`}>
+                                    <input
+                                        type="file"
+                                        accept=".pdf,.ppt,.pptx,.doc,.docx"
+                                        className="absolute inset-0 opacity-0 cursor-pointer"
+                                        onChange={e => {
+                                            setMaterialFile(e.target.files?.[0] || null);
+                                            setMaterialMsg('');
+                                        }}
+                                        disabled={materialUploading}
+                                    />
+
+                                    {materialFile ? (
+                                        <>
+                                            {/* File type badge */}
+                                            <div className="w-16 h-16 bg-blue-600 rounded-2xl flex items-center justify-center shadow-lg shadow-blue-200">
+                                                <span className="text-[10px] font-black text-white uppercase tracking-widest">
+                                                    {materialFile.name.split('.').pop()?.toUpperCase()}
+                                                </span>
+                                            </div>
+                                            <div className="text-center">
+                                                <p className="font-black text-gray-900 text-sm">{materialFile.name}</p>
+                                                <p className="text-[10px] font-bold text-gray-400 mt-1">
+                                                    {(materialFile.size / 1024).toFixed(0)} KB · Click to change file
+                                                </p>
+                                            </div>
+                                        </>
+                                    ) : (
+                                        <>
+                                            <div className="w-14 h-14 bg-gray-100 rounded-2xl flex items-center justify-center">
+                                                <Paperclip size={24} className="text-gray-400" />
+                                            </div>
+                                            <div className="text-center">
+                                                <p className="font-black text-gray-700">Drop a file or click to browse</p>
+                                                <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest mt-1">
+                                                    PDF · PPT · PPTX · DOC · DOCX
+                                                </p>
+                                            </div>
+                                        </>
+                                    )}
+                                </label>
+
+                                {/* Upload button */}
+                                <div className="flex items-center gap-3 mt-4">
+                                    <button
+                                        onClick={handleMaterialUpload}
+                                        disabled={!materialFile || materialUploading}
+                                        className="flex items-center gap-2 px-8 py-4 bg-blue-600 text-white rounded-2xl font-black text-xs uppercase tracking-[0.2em] hover:bg-blue-700 disabled:opacity-40 disabled:cursor-not-allowed transition-all shadow-xl shadow-blue-200"
+                                    >
+                                        {materialUploading ? (
+                                            <><div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />Uploading…</>
+                                        ) : (
+                                            <><Download size={14} className="rotate-180" />Upload Material</>
                                         )}
+                                    </button>
+                                    {materialFile && !materialUploading && (
+                                        <button
+                                            onClick={() => { setMaterialFile(null); setMaterialMsg(''); }}
+                                            className="px-5 py-4 bg-gray-100 text-gray-600 rounded-2xl font-black text-xs uppercase tracking-widest hover:bg-gray-200 transition-all"
+                                        >
+                                            Clear
+                                        </button>
+                                    )}
+                                </div>
+
+                                {/* Feedback message */}
+                                {materialMsg && (
+                                    <div className={`mt-4 p-4 rounded-2xl flex items-center gap-3 ${
+                                        materialMsg.includes('success')
+                                            ? 'bg-green-50 border border-green-100'
+                                            : 'bg-red-50 border border-red-100'
+                                    }`}>
+                                        <CheckCircle2 size={16} className={materialMsg.includes('success') ? 'text-green-500' : 'text-red-500'} />
+                                        <p className={`text-sm font-bold ${materialMsg.includes('success') ? 'text-green-700' : 'text-red-600'}`}>
+                                            {materialMsg}
+                                        </p>
                                     </div>
-                                ))}
+                                )}
                             </div>
                         )}
+
+                        {/* Materials list */}
+                        <div className="bg-white rounded-[32px] border border-gray-100 p-8">
+                            <h2 className="text-2xl font-black text-gray-900 uppercase tracking-tight mb-6">
+                                Attached Materials
+                                {hasMaterials && (
+                                    <span className="ml-3 text-base font-black text-gray-400">({lecture.studyMaterials.length})</span>
+                                )}
+                            </h2>
+
+                            {!hasMaterials ? (
+                                <div className="py-14 text-center">
+                                    <div className="w-14 h-14 bg-gray-100 rounded-2xl flex items-center justify-center mx-auto mb-4">
+                                        <Paperclip size={26} className="text-gray-400" />
+                                    </div>
+                                    <p className="font-bold text-gray-400 uppercase tracking-tight text-sm">No materials attached yet.</p>
+                                    <p className="text-xs text-gray-300 font-medium mt-2">
+                                        {canAddMaterial
+                                            ? 'Use the upload panel above to add PDFs, slides, or documents.'
+                                            : "The teacher hasn't attached any materials to this lecture yet."}
+                                    </p>
+                                </div>
+                            ) : (
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                    {lecture.studyMaterials.map((mat: any, i: number) => {
+                                        const ext = mat.fileType?.toLowerCase();
+                                        const colorMap: Record<string, string> = {
+                                            pdf: 'bg-red-50 text-red-600 border-red-100',
+                                            ppt: 'bg-orange-50 text-orange-600 border-orange-100',
+                                            pptx: 'bg-orange-50 text-orange-600 border-orange-100',
+                                            doc: 'bg-blue-50 text-blue-600 border-blue-100',
+                                            docx: 'bg-blue-50 text-blue-600 border-blue-100',
+                                        };
+                                        const badgeClass = colorMap[ext] || 'bg-gray-50 text-gray-600 border-gray-100';
+
+                                        return (
+                                            <div key={i} className="flex items-center gap-4 p-5 bg-gray-50 rounded-2xl border border-gray-100 hover:border-blue-200 hover:bg-blue-50 transition-all group">
+                                                <div className={`w-12 h-12 rounded-2xl flex items-center justify-center border font-black text-[10px] uppercase flex-shrink-0 ${badgeClass}`}>
+                                                    {mat.fileType?.toUpperCase() || 'FILE'}
+                                                </div>
+                                                <div className="flex-1 min-w-0">
+                                                    <p className="font-black text-gray-800 truncate text-sm">{mat.name}</p>
+                                                    <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mt-0.5">
+                                                        {mat.fileType?.toUpperCase()} · Study Material
+                                                    </p>
+                                                </div>
+                                                {mat.url && (
+                                                    <a
+                                                        href={`${process.env.NEXT_PUBLIC_API_URL?.replace('/api', '')}/${mat.url}`}
+                                                        target="_blank"
+                                                        rel="noopener noreferrer"
+                                                        className="w-9 h-9 bg-white border border-gray-100 rounded-xl flex items-center justify-center hover:bg-blue-600 hover:text-white hover:border-blue-600 transition-all flex-shrink-0"
+                                                        title="Download"
+                                                    >
+                                                        <Download size={15} />
+                                                    </a>
+                                                )}
+                                            </div>
+                                        );
+                                    })}
+                                </div>
+                            )}
+                        </div>
                     </div>
                 )}
 
