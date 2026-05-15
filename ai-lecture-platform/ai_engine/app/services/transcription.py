@@ -85,43 +85,51 @@ def transcribe_audio(file_path_or_url: str):
 
 def transcribe_youtube(youtube_url: str):
     """
-    Transcribe audio from YouTube URL using yt-dlp
+    Transcribe audio from YouTube URL using yt-dlp.
+    Downloads raw best-audio (no ffmpeg conversion needed) into a temp dir,
+    then transcribes directly with Whisper which handles webm/m4a/opus natively.
     """
     try:
         import yt_dlp
     except ImportError:
-        print("yt-dlp not installed. Attempting to use basic URL handling...")
-        # Fallback: try to get direct video URL
-        return {"text": "YouTube transcription requires yt-dlp package. Please install with: pip install yt-dlp", "segments": []}
-    
-    try:
-        # Download audio from YouTube
-        print("Extracting audio from YouTube...")
+        raise Exception(
+            "yt-dlp is not installed. Activate your venv and run: pip install yt-dlp"
+        )
+
+    import glob
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        output_template = os.path.join(tmpdir, 'audio.%(ext)s')
+
+        # No FFmpegExtractAudio postprocessor — Whisper handles webm/m4a/opus directly.
         ydl_opts = {
             'format': 'bestaudio/best',
-            'postprocessors': [{
-                'key': 'FFmpegExtractAudio',
-                'preferredcodec': 'mp3',
-                'preferredquality': '192',
-            }],
-            'outtmpl': 'temp_audio.%(ext)s',
+            'outtmpl': output_template,
+            'quiet': False,
+            'no_warnings': False,
         }
-        
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            info = ydl.extract_info(youtube_url, download=False)
-            title = info.get('title', 'YouTube Video')
-            
-            ydl.download([youtube_url])
-        
-        # Transcribe the downloaded audio
-        audio_file = 'temp_audio.mp3'
-        if os.path.exists(audio_file):
-            result = transcribe_audio(audio_file)
-            os.unlink(audio_file)  # Clean up
-            return result
-        else:
-            return {"text": "Failed to extract audio from YouTube", "segments": []}
-            
-    except Exception as e:
-        print(f"Error transcribing YouTube: {e}")
-        return {"text": f"Error processing YouTube URL: {str(e)}", "segments": []}
+
+        print("Downloading audio from YouTube via yt-dlp...")
+        try:
+            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                ydl.download([youtube_url])
+        except Exception as e:
+            raise Exception(f"yt-dlp download failed: {e}")
+
+        # Find the downloaded file (extension varies: webm, m4a, opus …)
+        files = glob.glob(os.path.join(tmpdir, 'audio.*'))
+        if not files:
+            raise Exception("yt-dlp produced no output file — check URL or format availability.")
+
+        audio_file = files[0]
+        print(f"Downloaded YouTube audio to: {audio_file}")
+
+        result = model.transcribe(audio_file, task="translate", fp16=False)
+
+        return {
+            "text": result["text"],
+            "segments": [
+                {"start": seg["start"], "end": seg["end"], "text": seg["text"]}
+                for seg in result["segments"]
+            ]
+        }

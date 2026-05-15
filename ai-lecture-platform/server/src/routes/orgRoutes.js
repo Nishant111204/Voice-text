@@ -5,13 +5,18 @@ const {
     getOrganizations,
     getOrgMembers,
     addUserToOrg,
+    getMyOrganizationDetails,
 } = require('../controllers/orgController');
 const { protect, authorize } = require('../middleware/authMiddleware');
 
 router
     .route('/')
-    .get(protect, authorize('superadmin'), getOrganizations)
+    .get(protect, authorize('admin', 'superadmin'), getOrganizations)
     .post(protect, authorize('superadmin'), createOrganization);
+
+router
+    .route('/me/details')
+    .get(protect, authorize('admin', 'superadmin'), getMyOrganizationDetails);
 
 router
     .route('/:id/members')

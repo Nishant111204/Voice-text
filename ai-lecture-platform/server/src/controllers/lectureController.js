@@ -4,6 +4,24 @@ const path = require('path');
 const fs = require('fs');
 const triggerAIProcessing = require('../utils/aiService');
 
+const isSharedLectureAccessibleToUser = (lecture, user) => {
+    if (!lecture || !user) return false;
+    if (lecture.userId?.toString() === user._id?.toString()) return true;
+    if (user.organizationId && lecture.organizationId) {
+        return (
+            lecture.isPrivate === false &&
+            lecture.organizationId.toString() === user.organizationId.toString()
+        );
+    }
+    return false;
+};
+
+const canUploadSharedLecture = (user) => {
+    if (!user) return false;
+    // Organization shared uploads should be restricted from students
+    return ['teacher', 'admin', 'superadmin'].includes(user.role);
+};
+
 // @desc    Upload a new lecture video
 // @route   POST /api/lectures/upload
 // @access  Private
@@ -14,15 +32,28 @@ const uploadLecture = asyncHandler(async (req, res) => {
     }
 
     const { title, isPrivate } = req.body;
+    const isPrivateBool = isPrivate === 'true' || isPrivate === true;
+
+    // If this is a shared (organization) lecture, block students from uploading
+    if (!isPrivateBool) {
+        if (!req.user.organizationId) {
+            res.status(400);
+            throw new Error('Organization is required for shared lectures');
+        }
+        if (!canUploadSharedLecture(req.user)) {
+            res.status(403);
+            throw new Error('Only teachers/admins can upload shared lectures');
+        }
+    }
 
     const lecture = await Lecture.create({
         userId: req.user._id,
-        organizationId: req.user.organizationId,
         title: title || req.file.originalname,
         videoUrl: req.file.path,
         originalFileName: req.file.originalname,
         status: 'uploading',
-        isPrivate: isPrivate === 'true' || isPrivate === true,
+        organizationId: isPrivateBool ? undefined : req.user.organizationId,
+        isPrivate: isPrivateBool,
     });
 
     console.log('Lecture created in DB:', lecture._id);
@@ -38,6 +69,7 @@ const uploadLecture = asyncHandler(async (req, res) => {
 // @access  Private
 const uploadLectureFromUrl = asyncHandler(async (req, res) => {
     const { videoUrl, title, isPrivate } = req.body;
+    const isPrivateBool = isPrivate === 'true' || isPrivate === true;
 
     if (!videoUrl) {
         res.status(400);
@@ -60,14 +92,25 @@ const uploadLectureFromUrl = asyncHandler(async (req, res) => {
         console.log('Warning: URL may not be direct file link. Processing will be attempted.');
     }
 
+    if (!isPrivateBool) {
+        if (!req.user.organizationId) {
+            res.status(400);
+            throw new Error('Organization is required for shared lectures');
+        }
+        if (!canUploadSharedLecture(req.user)) {
+            res.status(403);
+            throw new Error('Only teachers/admins can upload shared lectures');
+        }
+    }
+
     const lecture = await Lecture.create({
         userId: req.user._id,
-        organizationId: req.user.organizationId,
         title: title || extractTitleFromUrl(videoUrl),
         videoUrl: videoUrl,
         originalFileName: extractTitleFromUrl(videoUrl),
         status: 'uploading',
-        isPrivate: isPrivate === 'true' || isPrivate === true,
+        organizationId: isPrivateBool ? undefined : req.user.organizationId,
+        isPrivate: isPrivateBool,
     });
 
     console.log('Lecture created from URL in DB:', lecture._id);
@@ -123,7 +166,7 @@ const getLectures = asyncHandler(async (req, res) => {
 const getLectureById = asyncHandler(async (req, res) => {
     const lecture = await Lecture.findById(req.params.id);
 
-    if (lecture && lecture.userId.toString() === req.user._id.toString()) {
+    if (lecture && (lecture.userId.toString() === req.user._id.toString() || isSharedLectureAccessibleToUser(lecture, req.user))) {
         res.json(lecture);
     } else {
         res.status(404);
@@ -156,9 +199,24 @@ const deleteLecture = asyncHandler(async (req, res) => {
 const addStudyMaterial = asyncHandler(async (req, res) => {
     const lecture = await Lecture.findById(req.params.id);
 
-    if (!lecture || lecture.userId.toString() !== req.user._id.toString()) {
+    if (!lecture) {
         res.status(404);
         throw new Error('Lecture not found');
+    }
+
+    // Owner can always manage; otherwise only teachers/admin can upload materials for shared org lectures
+    const isOwner = lecture.userId.toString() === req.user._id.toString();
+    const isSharedOrgLecture =
+        lecture.isPrivate === false &&
+        lecture.organizationId &&
+        req.user.organizationId &&
+        lecture.organizationId.toString() === req.user.organizationId.toString();
+
+    if (!isOwner) {
+        if (!isSharedOrgLecture || !canUploadSharedLecture(req.user)) {
+            res.status(403);
+            throw new Error('Not authorized to add study materials');
+        }
     }
 
     if (!req.file) {

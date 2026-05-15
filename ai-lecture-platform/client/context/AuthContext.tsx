@@ -10,6 +10,8 @@ interface User {
     email: string;
     role: string;
     organizationId?: string;
+    organizationName?: string;
+    organizationCode?: string;
 }
 
 interface AuthContextType {
@@ -20,6 +22,12 @@ interface AuthContextType {
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
+
+function roleDashboard(role: string): string {
+    if (role === 'teacher') return '/teacher/dashboard';
+    if (role === 'admin' || role === 'superadmin') return '/org/dashboard';
+    return '/student/dashboard';
+}
 
 export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     const [user, setUser] = useState<User | null>(null);
@@ -33,8 +41,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
                 try {
                     const { data } = await api.get('/auth/me');
                     setUser(data);
-                } catch (error) {
-                    console.error("Auth check failed", error);
+                } catch {
                     localStorage.removeItem('token');
                 }
             }
@@ -46,7 +53,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     const login = (token: string, userData: User) => {
         localStorage.setItem('token', token);
         setUser(userData);
-        router.push('/dashboard');
+        router.push(roleDashboard(userData.role));
     };
 
     const logout = () => {
@@ -64,8 +71,6 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
 
 export const useAuth = () => {
     const context = useContext(AuthContext);
-    if (!context) {
-        throw new Error('useAuth must be used within an AuthProvider');
-    }
+    if (!context) throw new Error('useAuth must be used within an AuthProvider');
     return context;
 };

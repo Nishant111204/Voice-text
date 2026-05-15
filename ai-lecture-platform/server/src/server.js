@@ -21,6 +21,7 @@ const fs = require('fs');
 const path = require('path');
 const Lecture = require('./models/Lecture');
 const triggerAIProcessing = require('./utils/aiService');
+const User = require('./models/User');
 
 const recordings = new Map();
 
@@ -30,17 +31,38 @@ io.on('connection', (socket) => {
 
     socket.on('start-recording', async (data) => {
         const { userId, organizationId, title, isPrivate } = data;
+        const isPrivateBool = isPrivate === true;
+
+        const user = await User.findById(userId);
+        if (!user) {
+            socket.emit('recording-error', { message: 'User not found' });
+            return;
+        }
+
+        // Shared (organization) lectures must not be created by students
+        if (!isPrivateBool && !['teacher', 'admin', 'superadmin'].includes(user.role)) {
+            socket.emit('recording-error', { message: 'Only teachers/admins can upload shared lectures' });
+            return;
+        }
+
+        // For shared lectures, ensure organizationId belongs to the user
+        const resolvedOrganizationId = !isPrivateBool ? user.organizationId : undefined;
+        if (!isPrivateBool && !resolvedOrganizationId) {
+            socket.emit('recording-error', { message: 'Organization is required for shared lectures' });
+            return;
+        }
+
         const fileName = `recording-${Date.now()}.webm`;
         const filePath = path.join(__dirname, '../uploads', fileName);
 
         // Create lecture record
         const lecture = await Lecture.create({
             userId,
-            organizationId,
+            organizationId: resolvedOrganizationId,
             title: title || 'Live Recording',
             videoUrl: filePath,
             status: 'uploading',
-            isPrivate: isPrivate === true,
+            isPrivate: isPrivateBool,
         });
 
         recordings.set(socket.id, {

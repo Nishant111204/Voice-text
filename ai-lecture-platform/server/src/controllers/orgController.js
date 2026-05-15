@@ -6,9 +6,15 @@ const User = require('../models/User');
 // @route   POST /api/organizations
 // @access  Private/Superadmin
 const createOrganization = asyncHandler(async (req, res) => {
-    const { name, domain, adminEmail } = req.body;
+    const { name, domain, adminEmail, organizationType } = req.body;
+    if (!name) {
+        res.status(400);
+        throw new Error('Organization name is required');
+    }
 
-    const orgExists = await Organization.findOne({ name });
+    const orgExists = await Organization.findOne({
+        nameNormalized: name.trim().toLowerCase(),
+    });
     if (orgExists) {
         res.status(400);
         throw new Error('Organization already exists');
@@ -23,6 +29,8 @@ const createOrganization = asyncHandler(async (req, res) => {
 
     const organization = await Organization.create({
         name,
+        organizationCode: `ORG-${Math.random().toString(36).slice(2, 8).toUpperCase()}`,
+        organizationType: organizationType || 'other',
         domain,
         admin: adminUser._id,
     });
@@ -39,7 +47,16 @@ const createOrganization = asyncHandler(async (req, res) => {
 // @route   GET /api/organizations
 // @access  Private/Superadmin
 const getOrganizations = asyncHandler(async (req, res) => {
-    const organizations = await Organization.find({}).populate('admin', 'name email');
+    let organizations = [];
+
+    if (req.user.role === 'superadmin') {
+        organizations = await Organization.find({}).populate('admin', 'name email');
+    } else {
+        organizations = await Organization.find({
+            _id: req.user.organizationId,
+        }).populate('admin', 'name email');
+    }
+
     res.json(organizations);
 });
 
@@ -47,6 +64,14 @@ const getOrganizations = asyncHandler(async (req, res) => {
 // @route   GET /api/organizations/:id/members
 // @access  Private/Admin
 const getOrgMembers = asyncHandler(async (req, res) => {
+    if (
+        req.user.role === 'admin' &&
+        req.user.organizationId?.toString() !== req.params.id
+    ) {
+        res.status(403);
+        throw new Error('Admin can only view members of their own organization');
+    }
+
     const users = await User.find({ organizationId: req.params.id }).select('-password');
     res.json(users);
 });
@@ -56,6 +81,14 @@ const getOrgMembers = asyncHandler(async (req, res) => {
 // @access  Private/Admin
 const addUserToOrg = asyncHandler(async (req, res) => {
     const { email, role } = req.body;
+    if (
+        req.user.role === 'admin' &&
+        req.user.organizationId?.toString() !== req.params.id
+    ) {
+        res.status(403);
+        throw new Error('Admin can only manage members of their own organization');
+    }
+
     const user = await User.findOne({ email });
 
     if (!user) {
@@ -70,9 +103,39 @@ const addUserToOrg = asyncHandler(async (req, res) => {
     res.json({ message: 'User added to organization', user });
 });
 
+// @desc    Get current organization details with members
+// @route   GET /api/organizations/me/details
+// @access  Private/Admin
+const getMyOrganizationDetails = asyncHandler(async (req, res) => {
+    if (!req.user.organizationId) {
+        res.status(404);
+        throw new Error('No organization is linked to this user');
+    }
+
+    const organization = await Organization.findById(req.user.organizationId).populate(
+        'admin',
+        'name email'
+    );
+
+    if (!organization) {
+        res.status(404);
+        throw new Error('Organization not found');
+    }
+
+    const members = await User.find({ organizationId: req.user.organizationId }).select(
+        '-password'
+    );
+
+    res.json({
+        organization,
+        members,
+    });
+});
+
 module.exports = {
     createOrganization,
     getOrganizations,
     getOrgMembers,
     addUserToOrg,
+    getMyOrganizationDetails,
 };
